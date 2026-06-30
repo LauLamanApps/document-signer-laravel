@@ -1,21 +1,21 @@
-# laulamanapps/documentsigner-laravel
+# Laravel integration for the document signer SDK
 
-Laravel integration for the [Document Signer SDK](../sdk): config, service
+Laravel integration for the [Document Signer SDK](https://github.com/LauLamanApps/document-signer-sdk): config, service
 provider, driver manager, facade, and verified webhook routes for both
 ValidSign and DocuSign.
 
 ## Install
 
 ```bash
-composer require laulamanapps/documentsigner-laravel
+composer require laulamanapps/document-signer-laravel
 ```
 
 Then add at least one provider package — the laravel package treats both as
 optional:
 
 ```bash
-composer require laulamanapps/documentsigner-validsign   # for the validsign driver
-composer require laulamanapps/documentsigner-docusign    # for the docusign driver
+composer require laulamanapps/document-signer-validsign   # for the validsign driver
+composer require laulamanapps/document-signer-docusign    # for the docusign driver
 ```
 
 Publish the config:
@@ -193,7 +193,7 @@ DocumentSigner::set('validsign', new class implements SignatureProvider {
 ```
 
 For full end-to-end provider mocking, see
-[Extending the SDK](../sdk/docs/extending.md).
+[Extending the SDK](https://github.com/LauLamanApps/document-signer-sdk/blob/main/docs/extending.md).
 
 ## Requirements
 
@@ -207,9 +207,9 @@ For full end-to-end provider mocking, see
 
 ## Documentation
 
-- [SDK README](../sdk/README.md)
-- [Getting started](../sdk/docs/getting-started.md)
-- [ValidSign provider guide](../sdk/docs/providers/validsign.md)
-- [DocuSign provider guide](../sdk/docs/providers/docusign.md)
-- [Placeholder syntax](../sdk/docs/placeholders.md)
-- [Extending the SDK](../sdk/docs/extending.md)
+- [SDK README](https://github.com/LauLamanApps/document-signer-sdk)
+- [Getting started](https://github.com/LauLamanApps/document-signer-sdk/blob/main/docs/getting-started.md)
+- [ValidSign provider guide](https://github.com/LauLamanApps/document-signer-sdk/blob/main/docs/providers/validsign.md)
+- [DocuSign provider guide](https://github.com/LauLamanApps/document-signer-sdk/blob/main/docs/providers/docusign.md)
+- [Placeholder syntax](https://github.com/LauLamanApps/document-signer-sdk/blob/main/docs/placeholders.md)
+- [Extending the SDK](https://github.com/LauLamanApps/document-signer-sdk/blob/main/docs/extending.md)

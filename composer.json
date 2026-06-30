@@ -1,0 +1,45 @@
+{
+    "name": "laulamanapps/document-signer-laravel",
+    "description": "Laravel integration for the document signer SDK: config, service provider, manager, facade, and webhook routes for ValidSign and DocuSign.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.5",
+        "laulamanapps/document-signer-sdk": "^1.0",
+        "illuminate/contracts": "^13.0",
+        "illuminate/support": "^13.0",
+        "illuminate/http": "^13.0",
+        "illuminate/routing": "^13.0"
+    },
+    "require-dev": {
+        "laulamanapps/document-signer-validsign": "^1.0",
+        "laulamanapps/document-signer-docusign": "^1.0",
+        "orchestra/testbench": "^11.0",
+        "phpunit/phpunit": "^11.0"
+    },
+    "suggest": {
+        "laulamanapps/document-signer-validsign": "Required to use the `validsign` driver.",
+        "laulamanapps/document-signer-docusign":  "Required to use the `docusign` driver."
+    },
+    "autoload": {
+        "psr-4": {
+            "LauLamanApps\\DocumentSigner\\Laravel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "LauLamanApps\\DocumentSigner\\Laravel\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LauLamanApps\\DocumentSigner\\Laravel\\DocumentSignerServiceProvider"
+            ],
+            "aliases": {
+                "DocumentSigner": "LauLamanApps\\DocumentSigner\\Laravel\\Facades\\DocumentSigner"
+            }
+        }
+    },
+    "minimum-stability": "stable"
+}

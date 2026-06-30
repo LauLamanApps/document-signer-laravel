@@ -107,6 +107,48 @@ view renders, the resulting HTML is what you pass to `Document::$html` — the
 SDK parser sees the literal `{[type:signer:name]}` tokens and proceeds as
 usual.
 
+## PDF renderer
+
+The manager wires a [`PdfRenderer`](https://github.com/LauLamanApps/document-signer-sdk/blob/main/src/Pdf/PdfRenderer.php)
+into every driver it resolves. By default it uses the SDK's
+`BrowsershotPdfRenderer`. Two other options are built in.
+
+### Use spatie/laravel-pdf
+
+If your application already configures
+[spatie/laravel-pdf](https://github.com/spatie/laravel-pdf) — custom Node
+binary, default paper size, headers/footers, Browsershot tweaks — switch the
+SDK over so it picks up that configuration:
+
+```bash
+composer require spatie/laravel-pdf
+```
+
+```dotenv
+DOCUMENT_SIGNER_PDF_RENDERER=laravel-pdf
+```
+
+The SDK then renders every envelope document through the `Pdf` facade. If
+`laravel-pdf` isn't installed when this option is selected, the manager
+throws an `InvalidArgumentException` pointing at the install command.
+
+### Bind a fully custom renderer
+
+For any other engine (wkhtmltopdf, Gotenberg, an external service, a tuned
+Browsershot setup), implement the SDK's `PdfRenderer` interface and bind it
+in a service provider — the manager picks up the container binding first and
+ignores the config value:
+
+```php
+use LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer;
+use App\Pdf\GotenbergRenderer;
+
+$this->app->bind(PdfRenderer::class, GotenbergRenderer::class);
+```
+
+See [Writing a custom renderer](https://github.com/LauLamanApps/document-signer-sdk/blob/main/docs/pdf-rendering.md)
+for the interface and an example.
+
 ## Webhooks
 
 A webhook route is auto-registered for each driver whose primary credential

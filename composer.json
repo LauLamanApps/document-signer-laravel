@@ -15,11 +15,13 @@
         "laulamanapps/document-signer-validsign": "^1.0",
         "laulamanapps/document-signer-docusign": "^1.0",
         "orchestra/testbench": "^11.0",
-        "phpunit/phpunit": "^11.0"
+        "phpunit/phpunit": "^11.0",
+        "spatie/laravel-pdf": "^1.0 || ^2.0"
     },
     "suggest": {
         "laulamanapps/document-signer-validsign": "Required to use the `validsign` driver.",
-        "laulamanapps/document-signer-docusign":  "Required to use the `docusign` driver."
+        "laulamanapps/document-signer-docusign":  "Required to use the `docusign` driver.",
+        "spatie/laravel-pdf":                     "Required to use the `laravel-pdf` PDF renderer (uses the application's spatie/laravel-pdf configuration instead of plain Browsershot)."
     },
     "autoload": {
         "psr-4": {

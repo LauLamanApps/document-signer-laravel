@@ -87,4 +87,32 @@ return [
 
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | PDF renderer
+    |--------------------------------------------------------------------------
+    |
+    | Selects which PdfRenderer the manager wires into every driver.
+    |
+    |  - `browsershot` (default) uses the SDK's BrowsershotPdfRenderer; needs
+    |    Node.js + Puppeteer.
+    |  - `laravel-pdf` uses spatie/laravel-pdf, which itself wraps Browsershot
+    |    but respects any laravel-pdf bindings/macros your application has
+    |    configured. Requires `composer require spatie/laravel-pdf`.
+    |
+    | To fully replace the renderer (different engine, custom configuration),
+    | bind your own implementation in a service provider — the manager picks
+    | up the container binding first and ignores this config value when found:
+    |
+    |   $this->app->bind(
+    |       \LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer::class,
+    |       MyPdfRenderer::class,
+    |   );
+    |
+    */
+
+    'pdf' => [
+        'renderer' => env('DOCUMENT_SIGNER_PDF_RENDERER', 'browsershot'),
+    ],
+
 ];

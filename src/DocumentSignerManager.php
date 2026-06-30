@@ -6,6 +6,9 @@ namespace LauLamanApps\DocumentSigner\Laravel;
 
 use LauLamanApps\DocumentSigner\DocuSign\DocuSignConfig;
 use LauLamanApps\DocumentSigner\DocuSign\DocuSignProvider;
+use LauLamanApps\DocumentSigner\Laravel\Pdf\LaravelPdfRenderer;
+use LauLamanApps\DocumentSigner\Sdk\Pdf\BrowsershotPdfRenderer;
+use LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer;
 use LauLamanApps\DocumentSigner\Sdk\Provider\SignatureProvider;
 use LauLamanApps\DocumentSigner\ValidSign\ValidSignConfig;
 use LauLamanApps\DocumentSigner\ValidSign\ValidSignProvider;
@@ -127,13 +130,16 @@ class DocumentSignerManager
             );
         }
 
-        return new ValidSignProvider(new ValidSignConfig(
-            apiKey:               $apiKey,
-            baseUrl:              (string) ($config['base_url'] ?? 'https://my.validsign.nl/api'),
-            defaultLanguage:      (string) ($config['default_language'] ?? 'nl'),
-            timeoutSeconds:       (int)    ($config['timeout'] ?? 15),
-            uploadTimeoutSeconds: (int)    ($config['upload_timeout'] ?? 60),
-        ));
+        return new ValidSignProvider(
+            new ValidSignConfig(
+                apiKey:               $apiKey,
+                baseUrl:              (string) ($config['base_url'] ?? 'https://my.validsign.nl/api'),
+                defaultLanguage:      (string) ($config['default_language'] ?? 'nl'),
+                timeoutSeconds:       (int)    ($config['timeout'] ?? 15),
+                uploadTimeoutSeconds: (int)    ($config['upload_timeout'] ?? 60),
+            ),
+            pdfRenderer: $this->resolvePdfRenderer(),
+        );
     }
 
     /**
@@ -149,18 +155,21 @@ class DocumentSignerManager
 
         $privateKey = $this->resolvePrivateKey($config);
 
-        return new DocuSignProvider(new DocuSignConfig(
-            integrationKey:        (string) ($config['integration_key'] ?? ''),
-            userId:                (string) ($config['user_id'] ?? ''),
-            accountId:             (string) ($config['account_id'] ?? ''),
-            privateKey:            $privateKey,
-            oauthBaseUrl:          (string) ($config['oauth_base_url'] ?? 'account-d.docusign.com'),
-            apiBaseUrl:            (string) ($config['api_base_url'] ?? 'https://demo.docusign.net/restapi'),
-            scopes:                (string) ($config['scopes'] ?? 'signature impersonation'),
-            accessTokenTtlSeconds: (int)    ($config['access_token_ttl'] ?? 3600),
-            timeoutSeconds:        (int)    ($config['timeout'] ?? 15),
-            uploadTimeoutSeconds:  (int)    ($config['upload_timeout'] ?? 60),
-        ));
+        return new DocuSignProvider(
+            new DocuSignConfig(
+                integrationKey:        (string) ($config['integration_key'] ?? ''),
+                userId:                (string) ($config['user_id'] ?? ''),
+                accountId:             (string) ($config['account_id'] ?? ''),
+                privateKey:            $privateKey,
+                oauthBaseUrl:          (string) ($config['oauth_base_url'] ?? 'account-d.docusign.com'),
+                apiBaseUrl:            (string) ($config['api_base_url'] ?? 'https://demo.docusign.net/restapi'),
+                scopes:                (string) ($config['scopes'] ?? 'signature impersonation'),
+                accessTokenTtlSeconds: (int)    ($config['access_token_ttl'] ?? 3600),
+                timeoutSeconds:        (int)    ($config['timeout'] ?? 15),
+                uploadTimeoutSeconds:  (int)    ($config['upload_timeout'] ?? 60),
+            ),
+            pdfRenderer: $this->resolvePdfRenderer(),
+        );
     }
 
     /**
@@ -206,5 +215,53 @@ class DocumentSignerManager
         $repo = $this->container->make('config');
 
         return $repo->get($key);
+    }
+
+    /**
+     * Decide which {@see PdfRenderer} every driver should use.
+     *
+     * Resolution order:
+     *  1. A binding for the {@see PdfRenderer} interface in the container — when present
+     *     the caller has fully replaced the renderer, including any constructor wiring.
+     *  2. The `document-signer.pdf.renderer` config value, which selects between the
+     *     two built-in renderers (`browsershot`, `laravel-pdf`). Default: `browsershot`.
+     */
+    private function resolvePdfRenderer(): PdfRenderer
+    {
+        if ($this->container->bound(PdfRenderer::class)) {
+            $bound = $this->container->make(PdfRenderer::class);
+            if (!$bound instanceof PdfRenderer) {
+                throw new InvalidArgumentException(sprintf(
+                    'Binding for %s must implement %s.',
+                    PdfRenderer::class,
+                    PdfRenderer::class,
+                ));
+            }
+            return $bound;
+        }
+
+        $choice = $this->config('document-signer.pdf.renderer');
+        $choice = is_string($choice) && $choice !== '' ? $choice : 'browsershot';
+
+        return match ($choice) {
+            'browsershot' => new BrowsershotPdfRenderer(),
+            'laravel-pdf' => $this->createLaravelPdfRenderer(),
+            default       => throw new InvalidArgumentException(
+                "Unknown document-signer PDF renderer: '{$choice}'. "
+                . "Expected 'browsershot' or 'laravel-pdf'."
+            ),
+        };
+    }
+
+    private function createLaravelPdfRenderer(): PdfRenderer
+    {
+        if (!class_exists(\Spatie\LaravelPdf\Facades\Pdf::class)) {
+            throw new InvalidArgumentException(
+                'The laravel-pdf renderer requires spatie/laravel-pdf. '
+                . 'Install it with: composer require spatie/laravel-pdf'
+            );
+        }
+
+        return new LaravelPdfRenderer();
     }
 }

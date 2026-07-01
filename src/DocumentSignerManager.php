@@ -277,13 +277,25 @@ class DocumentSignerManager
         $choice = is_string($choice) && $choice !== '' ? $choice : 'browsershot';
 
         return match ($choice) {
-            'browsershot' => new BrowsershotPdfRenderer(),
+            'browsershot' => $this->createBrowsershotRenderer(),
             'laravel-pdf' => $this->createLaravelPdfRenderer(),
             default       => throw new InvalidArgumentException(
                 "Unknown document-signer PDF renderer: '{$choice}'. "
                 . "Expected 'browsershot' or 'laravel-pdf'."
             ),
         };
+    }
+
+    private function createBrowsershotRenderer(): PdfRenderer
+    {
+        if (!class_exists(\Spatie\Browsershot\Browsershot::class)) {
+            throw new InvalidArgumentException(
+                'The browsershot renderer requires spatie/browsershot. '
+                . 'Install it with: composer require spatie/browsershot'
+            );
+        }
+
+        return new BrowsershotPdfRenderer();
     }
 
     private function createLaravelPdfRenderer(): PdfRenderer

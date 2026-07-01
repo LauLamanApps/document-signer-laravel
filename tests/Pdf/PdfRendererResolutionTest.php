@@ -60,6 +60,21 @@ final class PdfRendererResolutionTest extends TestCase
     }
 
     #[Test]
+    public function it_throws_a_helpful_error_when_browsershot_is_selected_but_not_installed(): void
+    {
+        if (class_exists(\Spatie\Browsershot\Browsershot::class)) {
+            self::markTestSkipped('spatie/browsershot IS installed; cannot exercise the missing-package guard.');
+        }
+
+        $manager = $this->makeManager(['pdf' => ['renderer' => 'browsershot']]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('composer require spatie/browsershot');
+
+        $manager->driver('validsign');
+    }
+
+    #[Test]
     public function unknown_renderer_value_is_rejected(): void
     {
         $manager = $this->makeManager(['pdf' => ['renderer' => 'wkhtmltopdf']]);

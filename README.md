@@ -126,6 +126,19 @@ The manager wires a [`PdfRenderer`](https://github.com/LauLamanApps/document-sig
 into every driver it resolves. By default it uses the SDK's
 `BrowsershotPdfRenderer`. Two other options are built in.
 
+### Default: install spatie/browsershot
+
+The SDK bundles the `BrowsershotPdfRenderer` class but not the Composer
+dependency — you need to install it explicitly if you want to keep the
+default:
+
+```bash
+composer require spatie/browsershot
+```
+
+Without it the manager throws an `InvalidArgumentException` pointing at the
+install command the first time it tries to build the renderer.
+
 ### Use spatie/laravel-pdf
 
 If your application already configures

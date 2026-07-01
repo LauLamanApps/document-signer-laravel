@@ -16,6 +16,7 @@
         "laulamanapps/document-signer-docusign": "^1.0",
         "orchestra/testbench": "^11.0",
         "phpunit/phpunit": "^11.0",
+        "spatie/browsershot": "^4.0 || ^5.0",
         "spatie/laravel-pdf": "^1.0 || ^2.0"
     },
     "suggest": {

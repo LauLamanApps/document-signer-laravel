@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace LauLamanApps\DocumentSigner\Laravel\Pdf;
 
 use LauLamanApps\DocumentSigner\Sdk\Exception\DocumentSignerException;
+use LauLamanApps\DocumentSigner\Sdk\Pdf\FooterPlacement;
+use LauLamanApps\DocumentSigner\Sdk\Pdf\HeaderPlacement;
+use LauLamanApps\DocumentSigner\Sdk\Pdf\PageDecoration;
 use LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
@@ -28,10 +31,14 @@ final class LaravelPdfRenderer implements PdfRenderer
         private readonly ?\Closure $configure = null,
     ) {}
 
-    public function render(string $html): string
+    public function render(string $html, ?PageDecoration $decoration = null): string
     {
+        $body = $this->applyInlineDecoration($html, $decoration);
+
         try {
-            $pdf = Pdf::html($html);
+            $pdf = Pdf::html($body);
+
+            $this->applyNativeDecoration($pdf, $decoration);
 
             if ($this->configure !== null) {
                 ($this->configure)($pdf);
@@ -52,6 +59,40 @@ final class LaravelPdfRenderer implements PdfRenderer
                 'spatie/laravel-pdf failed to render HTML to PDF: ' . $e->getMessage(),
                 previous: $e,
             );
+        }
+    }
+
+    private function applyInlineDecoration(string $html, ?PageDecoration $decoration): string
+    {
+        if ($decoration === null || $decoration->isEmpty()) {
+            return $html;
+        }
+
+        $body = $html;
+
+        if ($decoration->hasHeader() && $decoration->headerPlacement === HeaderPlacement::FirstPage) {
+            $body = $decoration->headerHtml . $body;
+        }
+
+        if ($decoration->hasFooter() && $decoration->footerPlacement === FooterPlacement::FirstPage) {
+            $body .= $decoration->footerHtml;
+        }
+
+        return $body;
+    }
+
+    private function applyNativeDecoration(PdfBuilder $pdf, ?PageDecoration $decoration): void
+    {
+        if ($decoration === null) {
+            return;
+        }
+
+        if ($decoration->hasHeader() && $decoration->headerPlacement === HeaderPlacement::AllPages) {
+            $pdf->headerHtml((string) $decoration->headerHtml);
+        }
+
+        if ($decoration->hasFooter() && $decoration->footerPlacement === FooterPlacement::AllPages) {
+            $pdf->footerHtml((string) $decoration->footerHtml);
         }
     }
 }

@@ -89,7 +89,7 @@ final class PdfRendererResolutionTest extends TestCase
     public function a_container_binding_wins_over_the_config_choice(): void
     {
         $custom = new class implements PdfRenderer {
-            public function render(string $html): string { return 'CUSTOM'; }
+            public function render(string $html, ?\LauLamanApps\DocumentSigner\Sdk\Pdf\PageDecoration $decoration = null): string { return 'CUSTOM'; }
         };
 
         $container = new Container();

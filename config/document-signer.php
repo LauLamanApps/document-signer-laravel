@@ -10,11 +10,17 @@ return [
     |--------------------------------------------------------------------------
     |
     | Which driver `DocumentSigner::send()` resolves to when no explicit
-    | `driver(...)` call is made. Must match a key under `drivers`.
+    | `driver(...)` call is made.
+    |
+    | When left `null` (the default), the manager auto-selects the sole
+    | configured driver — the one whose primary credential is set. If
+    | multiple drivers are configured, the manager throws on the first
+    | implicit `send()` call and asks you to set `DOCUMENT_SIGNER_DRIVER`
+    | explicitly.
     |
     */
 
-    'default' => env('DOCUMENT_SIGNER_DRIVER', 'validsign'),
+    'default' => env('DOCUMENT_SIGNER_DRIVER'),
 
     /*
     |--------------------------------------------------------------------------

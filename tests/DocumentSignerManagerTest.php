@@ -117,14 +117,86 @@ final class DocumentSignerManagerTest extends TestCase
     }
 
     #[Test]
-    public function it_throws_when_no_default_is_configured(): void
+    public function it_throws_when_no_drivers_are_configured_and_no_default_is_set(): void
     {
         $manager = $this->makeManager(['drivers' => []]);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('No default document-signer driver');
+        $this->expectExceptionMessage('No document-signer driver is configured');
 
         $manager->driver();
+    }
+
+    #[Test]
+    public function it_auto_selects_the_sole_configured_driver_when_no_default_is_set(): void
+    {
+        $manager = $this->makeManager([
+            'drivers' => [
+                'validsign' => ['api_key' => 'k'],
+                'docusign'  => ['integration_key' => null],
+            ],
+        ]);
+
+        self::assertSame('validsign', $manager->getDefaultDriver());
+        self::assertInstanceOf(ValidSignProvider::class, $manager->driver());
+    }
+
+    #[Test]
+    public function it_auto_selects_docusign_when_only_docusign_is_configured(): void
+    {
+        if (self::$rsaPem === null) {
+            self::markTestSkipped('openssl not available');
+        }
+
+        $manager = $this->makeManager([
+            'drivers' => [
+                'validsign' => ['api_key' => null],
+                'docusign'  => [
+                    'integration_key' => 'i', 'user_id' => 'u', 'account_id' => 'a',
+                    'private_key' => self::$rsaPem,
+                ],
+            ],
+        ]);
+
+        self::assertSame('docusign', $manager->getDefaultDriver());
+        self::assertInstanceOf(DocuSignProvider::class, $manager->driver());
+    }
+
+    #[Test]
+    public function it_throws_a_multi_driver_hint_when_more_than_one_is_configured_and_no_default_is_set(): void
+    {
+        $manager = $this->makeManager([
+            'drivers' => [
+                'validsign' => ['api_key' => 'k'],
+                'docusign'  => ['integration_key' => 'i'],
+            ],
+        ]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Multiple document-signer drivers are configured (docusign, validsign)');
+
+        $manager->driver();
+    }
+
+    #[Test]
+    public function explicit_default_wins_over_auto_selection(): void
+    {
+        if (self::$rsaPem === null) {
+            self::markTestSkipped('openssl not available');
+        }
+
+        $manager = $this->makeManager([
+            'default' => 'docusign',
+            'drivers' => [
+                'validsign' => ['api_key' => 'k'],
+                'docusign'  => [
+                    'integration_key' => 'i', 'user_id' => 'u', 'account_id' => 'a',
+                    'private_key' => self::$rsaPem,
+                ],
+            ],
+        ]);
+
+        self::assertInstanceOf(DocuSignProvider::class, $manager->driver());
     }
 
     #[Test]
@@ -160,7 +232,8 @@ final class DocumentSignerManagerTest extends TestCase
                 return new EnvelopeReceipt(provider: 'fake', providerEnvelopeId: 'x', status: EnvelopeStatus::Sent);
             }
             public function getStatus(string $providerEnvelopeId): EnvelopeStatus { return EnvelopeStatus::Completed; }
-            public function downloadSigned(string $providerEnvelopeId): string { return '%PDF'; }
+            public function downloadSigned(string $providerEnvelopeId): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
+            public function downloadAudit(string $providerEnvelopeId): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
             public function cancel(string $providerEnvelopeId, ?string $reason = null): void {}
         };
     }

@@ -78,15 +78,48 @@ class DocumentSignerManager
 
     public function getDefaultDriver(): string
     {
-        $default = $this->config('document-signer.default');
-
-        if (!is_string($default) || $default === '') {
-            throw new InvalidArgumentException(
-                'No default document-signer driver is configured. Set `document-signer.default`.'
-            );
+        $explicit = $this->config('document-signer.default');
+        if (is_string($explicit) && $explicit !== '') {
+            return $explicit;
         }
 
-        return $default;
+        $configured = $this->configuredDrivers();
+
+        return match (count($configured)) {
+            1 => $configured[0],
+            0 => throw new InvalidArgumentException(
+                'No document-signer driver is configured. Set at least one driver credential '
+                . '(VALIDSIGN_API_KEY, DOCUSIGN_INTEGRATION_KEY, ...) or set DOCUMENT_SIGNER_DRIVER explicitly.'
+            ),
+            default => throw new InvalidArgumentException(sprintf(
+                'Multiple document-signer drivers are configured (%s). '
+                . 'Set DOCUMENT_SIGNER_DRIVER to pick one.',
+                implode(', ', $configured),
+            )),
+        };
+    }
+
+    /**
+     * Names of the built-in drivers whose primary credential is present in config.
+     *
+     * @return list<string>
+     */
+    public function configuredDrivers(): array
+    {
+        $primaryCredentials = [
+            'docusign'  => 'integration_key',
+            'validsign' => 'api_key',
+        ];
+
+        $configured = [];
+        foreach ($primaryCredentials as $driver => $credentialKey) {
+            $value = $this->config("document-signer.drivers.{$driver}.{$credentialKey}");
+            if (is_string($value) && $value !== '') {
+                $configured[] = $driver;
+            }
+        }
+
+        return $configured;
     }
 
     /**

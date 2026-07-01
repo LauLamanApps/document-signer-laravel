@@ -40,17 +40,13 @@ final class DocumentSignerServiceProvider extends ServiceProvider
 
     private function registerWebhookRoutes(): void
     {
-        $config = $this->app->make('config');
-
-        $drivers = array_filter([
-            'docusign'  => $this->driverConfigured($config, 'docusign'),
-            'validsign' => $this->driverConfigured($config, 'validsign'),
-        ]);
+        $drivers = $this->app->make(DocumentSignerManager::class)->configuredDrivers();
 
         if ($drivers === []) {
             return;
         }
 
+        $config = $this->app->make('config');
         $prefix = trim((string) $config->get('document-signer.webhooks.prefix', 'document-signer/webhooks'), '/');
         $middleware = (array) $config->get('document-signer.webhooks.middleware', ['api']);
 
@@ -58,22 +54,10 @@ final class DocumentSignerServiceProvider extends ServiceProvider
             ->prefix($prefix)
             ->name('document-signer.webhooks.')
             ->group(static function () use ($drivers): void {
-                foreach ($drivers as $driver => $_enabled) {
+                foreach ($drivers as $driver) {
                     Route::post($driver, [WebhookController::class, $driver])->name($driver);
                 }
             });
-    }
-
-    private function driverConfigured(\Illuminate\Contracts\Config\Repository $config, string $driver): bool
-    {
-        $credentialKey = match ($driver) {
-            'docusign'  => 'integration_key',
-            'validsign' => 'api_key',
-        };
-
-        $value = $config->get("document-signer.drivers.{$driver}.{$credentialKey}");
-
-        return is_string($value) && $value !== '';
     }
 
     private function configPath(string $file): string

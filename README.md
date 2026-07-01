@@ -29,19 +29,32 @@ php artisan vendor:publish --tag=document-signer-config
 `config/document-signer.php` reads from `.env`. Minimum for ValidSign:
 
 ```dotenv
-DOCUMENT_SIGNER_DRIVER=validsign
 VALIDSIGN_API_KEY=your-base64-key
 ```
 
 Minimum for DocuSign:
 
 ```dotenv
-DOCUMENT_SIGNER_DRIVER=docusign
 DOCUSIGN_INTEGRATION_KEY=...
 DOCUSIGN_USER_ID=...
 DOCUSIGN_ACCOUNT_ID=...
 DOCUSIGN_PRIVATE_KEY_PATH=/path/to/private.pem
 ```
+
+### Default driver
+
+`DOCUMENT_SIGNER_DRIVER` is optional. If left unset the manager auto-selects
+the sole configured driver — i.e. the one whose primary credential
+(`VALIDSIGN_API_KEY` or `DOCUSIGN_INTEGRATION_KEY`) is present. Set the
+variable explicitly only when you configure both providers in the same app:
+
+```dotenv
+# Both configured — pick the implicit default:
+DOCUMENT_SIGNER_DRIVER=validsign
+```
+
+Without an explicit choice in the "both configured" case, the first implicit
+`DocumentSigner::send()` call throws with the list of configured drivers.
 
 ## Sending an envelope
 
@@ -229,7 +242,8 @@ DocumentSigner::set('validsign', new class implements SignatureProvider {
         );
     }
     public function getStatus(string $id): EnvelopeStatus { return EnvelopeStatus::Completed; }
-    public function downloadSigned(string $id): string    { return '%PDF-FAKE'; }
+    public function downloadSigned(string $id): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
+    public function downloadAudit(string $id): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
     public function cancel(string $id, ?string $reason = null): void {}
 });
 ```

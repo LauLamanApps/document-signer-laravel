@@ -40,13 +40,18 @@ final class DocumentSignerServiceProvider extends ServiceProvider
 
     private function registerWebhookRoutes(): void
     {
+        $config = $this->app->make('config');
+
+        if (!(bool) $config->get('document-signer.webhooks.enabled', true)) {
+            return;
+        }
+
         $drivers = $this->app->make(DocumentSignerManager::class)->configuredDrivers();
 
         if ($drivers === []) {
             return;
         }
 
-        $config = $this->app->make('config');
         $prefix = trim((string) $config->get('document-signer.webhooks.prefix', 'document-signer/webhooks'), '/');
         $middleware = (array) $config->get('document-signer.webhooks.middleware', ['api']);
 

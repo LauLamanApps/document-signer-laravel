@@ -178,9 +178,21 @@ for the interface and an example.
 ## Webhooks
 
 A webhook route is auto-registered for each driver whose primary credential
-is configured. There is no separate enable flag — if you set up DocuSign,
-you get the DocuSign webhook; if you set up ValidSign, you get the ValidSign
-webhook. If neither driver is configured, no routes are registered at all.
+is configured — if you set up DocuSign, you get the DocuSign webhook; if you
+set up ValidSign, you get the ValidSign webhook. If neither driver is
+configured, no routes are registered at all.
+
+The whole subsystem can be turned off with an explicit env flag:
+
+```dotenv
+DOCUMENT_SIGNER_WEBHOOKS_ENABLED=false
+```
+
+When set to `false`, no webhook routes are registered regardless of which
+drivers are configured. Useful when callbacks are handled by a separate
+service (queue worker, edge function, external ingest), or during local
+development when you don't want to expose the endpoints at all. Defaults
+to `true` so existing setups keep working unchanged.
 
 DocuSign only:
 
@@ -202,7 +214,7 @@ The common prefix (default `document-signer/webhooks`) and middleware
 | Provider | Registered when | Route name | URL | Signature mechanism |
 | --- | --- | --- | --- | --- |
 | DocuSign | `DOCUSIGN_INTEGRATION_KEY` is set | `document-signer.webhooks.docusign` | `POST /document-signer/webhooks/docusign` | HMAC-SHA256 of raw body in `X-DocuSign-Signature-1..N` |
-| ValidSign | `VALIDSIGN_API_KEY` is set | `document-signer.webhooks.validsign` | `POST /document-signer/webhooks/validsign` | Shared secret in `?token=`, `X-Callback-Key`, or `X-Callback-Token` |
+| ValidSign | `VALIDSIGN_API_KEY` is set | `document-signer.webhooks.validsign` | `POST /document-signer/webhooks/validsign` | Shared secret in `Authorization: Basic <credentials>` — accepted as `base64("user:secret")`, `base64(secret)`, or the raw string |
 
 Both verifiers use `hash_equals` for constant-time comparison and reject
 unverified requests with HTTP 401. The webhook will still 401 every request

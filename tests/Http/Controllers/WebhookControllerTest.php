@@ -65,8 +65,11 @@ final class WebhookControllerTest extends TestCase
     public function it_dispatches_event_when_validsign_token_matches(): void
     {
         $body = '{"package":"x"}';
-        $request = Request::create('/x?token=secret-token', 'POST',
-            server: ['CONTENT_TYPE' => 'application/json'],
+        $request = Request::create('/x', 'POST',
+            server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_AUTHORIZATION' => 'Basic ' . base64_encode('validsign:secret-token'),
+            ],
             content: $body);
 
         [$controller, $captured] = $this->buildController([
@@ -84,7 +87,9 @@ final class WebhookControllerTest extends TestCase
     #[Test]
     public function it_returns_401_when_validsign_token_is_wrong(): void
     {
-        $request = Request::create('/x?token=wrong', 'POST', content: '{}');
+        $request = Request::create('/x', 'POST',
+            server: ['HTTP_AUTHORIZATION' => 'Basic ' . base64_encode('validsign:wrong')],
+            content: '{}');
 
         [$controller, $captured] = $this->buildController([
             'document-signer.webhooks.validsign.callback_secret' => 'right',

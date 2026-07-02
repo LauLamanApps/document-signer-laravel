@@ -87,6 +87,31 @@ final class DocumentSignerServiceProviderTest extends TestCase
         self::assertContains('document-signer.webhooks.docusign', $routes);
     }
 
+    public function test_webhook_routes_are_skipped_when_enabled_is_false_even_with_credentials_set(): void
+    {
+        $this->envOverrides = [
+            'document-signer.webhooks.enabled' => false,
+            'document-signer.drivers.validsign.api_key' => 'k',
+            'document-signer.drivers.docusign.integration_key' => 'i',
+        ];
+        $this->refreshApplication();
+
+        $routes = $this->routeNames();
+        self::assertNotContains('document-signer.webhooks.validsign', $routes);
+        self::assertNotContains('document-signer.webhooks.docusign', $routes);
+    }
+
+    public function test_webhook_routes_still_register_when_enabled_defaults_to_true(): void
+    {
+        // No explicit `webhooks.enabled` key — should default to true.
+        $this->envOverrides = [
+            'document-signer.drivers.validsign.api_key' => 'k',
+        ];
+        $this->refreshApplication();
+
+        self::assertContains('document-signer.webhooks.validsign', $this->routeNames());
+    }
+
     /**
      * @return list<string>
      */

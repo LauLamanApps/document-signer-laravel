@@ -68,11 +68,19 @@ return [
     | ValidSign: `api_key`). An app that only sets up the DocuSign driver
     | therefore only exposes the DocuSign webhook.
     |
+    | The whole subsystem can be turned off with
+    | `DOCUMENT_SIGNER_WEBHOOKS_ENABLED=false` — the service provider then
+    | registers no routes at all, regardless of which drivers are configured.
+    | Useful for environments that receive callbacks through a separate
+    | service (queue worker, edge function, ...) instead of the Laravel app.
+    |
     | Both providers use a shared-secret model:
     |  - DocuSign Connect signs the request body with HMAC-SHA256 and sends
     |    the base64 result in `X-DocuSign-Signature-1`.
-    |  - ValidSign callbacks include the configured token either in the URL
-    |    (`?token=...`) or in an `X-Callback-Key` / `X-Callback-Token` header.
+    |  - ValidSign callbacks send the configured secret in the
+    |    `Authorization: Basic <credentials>` header. The verifier accepts
+    |    `base64("username:secret")`, `base64(secret)`, or the raw string
+    |    after `Basic `, to cover the encodings different tenants use.
     |
     | Unverified requests are rejected with HTTP 401.
     |
@@ -80,6 +88,7 @@ return [
 
     'webhooks' => [
 
+        'enabled'    => (bool) env('DOCUMENT_SIGNER_WEBHOOKS_ENABLED', true),
         'prefix'     => env('DOCUMENT_SIGNER_WEBHOOK_PREFIX', 'document-signer/webhooks'),
         'middleware' => ['api'],
 

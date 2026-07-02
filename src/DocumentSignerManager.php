@@ -25,6 +25,7 @@ use InvalidArgumentException;
  * @method \LauLamanApps\DocumentSigner\Sdk\Provider\EnvelopeReceipt send(\LauLamanApps\DocumentSigner\Sdk\Envelope\Envelope $envelope)
  * @method \LauLamanApps\DocumentSigner\Sdk\Envelope\EnvelopeStatus getStatus(string $providerEnvelopeId)
  * @method string downloadSigned(string $providerEnvelopeId)
+ * @method \SplFileInfo downloadSignedDocument(string $providerEnvelopeId, string $documentId)
  * @method void   cancel(string $providerEnvelopeId, ?string $reason = null)
  */
 class DocumentSignerManager

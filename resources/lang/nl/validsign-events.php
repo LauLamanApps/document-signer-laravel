@@ -11,6 +11,7 @@ declare(strict_types=1);
  */
 
 return [
+    'DOCUMENT_VIEWED'            => 'Document bekeken',
     'DOCUMENT_SIGNED'            => 'Document ondertekend',
     'EMAIL_BOUNCE'               => 'Notificatie-e-mail teruggekomen',
     'KBA_FAILURE'                => 'Kennisverificatie mislukt',

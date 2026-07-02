@@ -14,6 +14,7 @@ declare(strict_types=1);
  */
 
 return [
+    'DOCUMENT_VIEWED'            => 'Document viewed',
     'DOCUMENT_SIGNED'            => 'Document signed',
     'EMAIL_BOUNCE'               => 'Notification email bounced',
     'KBA_FAILURE'                => 'Knowledge-based authentication failed',

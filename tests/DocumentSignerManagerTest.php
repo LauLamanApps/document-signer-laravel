@@ -233,6 +233,7 @@ final class DocumentSignerManagerTest extends TestCase
             }
             public function getStatus(string $providerEnvelopeId): EnvelopeStatus { return EnvelopeStatus::Completed; }
             public function downloadSigned(string $providerEnvelopeId): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
+            public function downloadSignedDocument(string $providerEnvelopeId, string $documentId): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
             public function downloadAudit(string $providerEnvelopeId): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
             public function getFieldValues(string $providerEnvelopeId): array { return []; }
             public function cancel(string $providerEnvelopeId, ?string $reason = null): void {}

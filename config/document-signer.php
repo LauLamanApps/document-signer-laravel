@@ -64,15 +64,15 @@ return [
     |--------------------------------------------------------------------------
     |
     | The service provider auto-registers a webhook route for every driver
-    | whose primary credential is configured (DocuSign: `integration_key`,
-    | ValidSign: `api_key`). An app that only sets up the DocuSign driver
-    | therefore only exposes the DocuSign webhook.
+    | whose webhook secret is set. Setting a secret is what enables the
+    | webhook — there's no separate on/off flag, because a webhook with no
+    | secret would 401 every request anyway. Set:
+    |  - `DOCUSIGN_CONNECT_HMAC_SECRET` to enable the DocuSign webhook.
+    |  - `VALIDSIGN_CALLBACK_SECRET` to enable the ValidSign webhook.
     |
-    | The whole subsystem can be turned off with
-    | `DOCUMENT_SIGNER_WEBHOOKS_ENABLED=false` — the service provider then
-    | registers no routes at all, regardless of which drivers are configured.
-    | Useful for environments that receive callbacks through a separate
-    | service (queue worker, edge function, ...) instead of the Laravel app.
+    | If neither is set, no webhook routes are registered at all — useful
+    | when callbacks are handled by a separate service (queue worker, edge
+    | function, external ingest) or in local development.
     |
     | Both providers use a shared-secret model:
     |  - DocuSign Connect signs the request body with HMAC-SHA256 and sends
@@ -88,7 +88,6 @@ return [
 
     'webhooks' => [
 
-        'enabled'    => (bool) env('DOCUMENT_SIGNER_WEBHOOKS_ENABLED', true),
         'prefix'     => env('DOCUMENT_SIGNER_WEBHOOK_PREFIX', 'document-signer/webhooks'),
         'middleware' => ['api'],
 

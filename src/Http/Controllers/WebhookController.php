@@ -8,6 +8,8 @@ use LauLamanApps\DocumentSigner\Laravel\Events\DocumentSignerWebhookReceived;
 use LauLamanApps\DocumentSigner\Laravel\Http\SignatureVerification\DocuSignSignatureVerifier;
 use LauLamanApps\DocumentSigner\Laravel\Http\SignatureVerification\ValidSignSignatureVerifier;
 use LauLamanApps\DocumentSigner\Laravel\Http\SignatureVerification\WebhookSignatureVerifier;
+use LauLamanApps\DocumentSigner\Sdk\Webhook\WebhookEvent;
+use LauLamanApps\DocumentSigner\ValidSign\Webhook\EventType as ValidSignEventType;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +19,12 @@ use Illuminate\Http\Request;
  * Receives provider-side status callbacks, verifies the shared-secret signature,
  * and re-emits the payload as a {@see DocumentSignerWebhookReceived} event so
  * application code can update its own state without coupling to the SDK.
+ *
+ * When the provider ships a {@see WebhookEvent} enum (currently ValidSign; DocuSign
+ * to follow), the controller resolves the callback token against it before
+ * dispatching, so listeners can use the semantic predicates
+ * (`$event->event?->isCompleted()`, `->isDeclined()`, …) directly without doing
+ * the enum look-up themselves.
  */
 final class WebhookController
 {
@@ -33,6 +41,8 @@ final class WebhookController
             verifier: new DocuSignSignatureVerifier(
                 $this->config->get('document-signer.webhooks.docusign.hmac_secret'),
             ),
+            // DocuSign doesn't ship a WebhookEvent enum yet; listeners fall back to $event->payload.
+            resolveEvent: static fn (array $_): ?WebhookEvent => null,
         );
     }
 
@@ -44,11 +54,22 @@ final class WebhookController
             verifier: new ValidSignSignatureVerifier(
                 (string) ($this->config->get('document-signer.webhooks.validsign.callback_secret') ?? ''),
             ),
+            resolveEvent: static fn (array $payload): ?WebhookEvent =>
+                class_exists(ValidSignEventType::class)
+                    ? ValidSignEventType::tryFromPayload($payload)
+                    : null,
         );
     }
 
-    private function handle(Request $request, string $driver, WebhookSignatureVerifier $verifier): JsonResponse
-    {
+    /**
+     * @param \Closure(array<string, mixed>): ?WebhookEvent $resolveEvent
+     */
+    private function handle(
+        Request $request,
+        string $driver,
+        WebhookSignatureVerifier $verifier,
+        \Closure $resolveEvent,
+    ): JsonResponse {
         if (!$verifier->verify($request)) {
             return new JsonResponse(['error' => 'invalid_signature'], 401);
         }
@@ -70,6 +91,7 @@ final class WebhookController
             driver: $driver,
             payload: $payload,
             request: $request,
+            event: $resolveEvent($payload),
         ));
 
         return new JsonResponse(['ok' => true]);

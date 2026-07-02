@@ -177,22 +177,17 @@ for the interface and an example.
 
 ## Webhooks
 
-A webhook route is auto-registered for each driver whose primary credential
-is configured — if you set up DocuSign, you get the DocuSign webhook; if you
-set up ValidSign, you get the ValidSign webhook. If neither driver is
-configured, no routes are registered at all.
+The signing secret **is** the on/off switch. A webhook route is registered
+for each driver whose secret is set:
 
-The whole subsystem can be turned off with an explicit env flag:
+- `DOCUSIGN_CONNECT_HMAC_SECRET` set → `POST /document-signer/webhooks/docusign`
+- `VALIDSIGN_CALLBACK_SECRET` set → `POST /document-signer/webhooks/validsign`
 
-```dotenv
-DOCUMENT_SIGNER_WEBHOOKS_ENABLED=false
-```
-
-When set to `false`, no webhook routes are registered regardless of which
-drivers are configured. Useful when callbacks are handled by a separate
-service (queue worker, edge function, external ingest), or during local
-development when you don't want to expose the endpoints at all. Defaults
-to `true` so existing setups keep working unchanged.
+If neither is set, no webhook routes are registered at all — a webhook with
+no secret would 401 every request anyway, so exposing it wouldn't be useful.
+This is also the switch to use when callbacks are handled by a separate
+service (queue worker, edge function, external ingest): just leave the
+secret unset.
 
 DocuSign only:
 
@@ -213,13 +208,11 @@ The common prefix (default `document-signer/webhooks`) and middleware
 
 | Provider | Registered when | Route name | URL | Signature mechanism |
 | --- | --- | --- | --- | --- |
-| DocuSign | `DOCUSIGN_INTEGRATION_KEY` is set | `document-signer.webhooks.docusign` | `POST /document-signer/webhooks/docusign` | HMAC-SHA256 of raw body in `X-DocuSign-Signature-1..N` |
-| ValidSign | `VALIDSIGN_API_KEY` is set | `document-signer.webhooks.validsign` | `POST /document-signer/webhooks/validsign` | Shared secret in `Authorization: Basic <credentials>` — accepted as `base64("user:secret")`, `base64(secret)`, or the raw string |
+| DocuSign | `DOCUSIGN_CONNECT_HMAC_SECRET` is set | `document-signer.webhooks.docusign` | `POST /document-signer/webhooks/docusign` | HMAC-SHA256 of raw body in `X-DocuSign-Signature-1..N` |
+| ValidSign | `VALIDSIGN_CALLBACK_SECRET` is set | `document-signer.webhooks.validsign` | `POST /document-signer/webhooks/validsign` | Shared secret in `Authorization: Basic <credentials>` — accepted as `base64("user:secret")`, `base64(secret)`, or the raw string |
 
 Both verifiers use `hash_equals` for constant-time comparison and reject
-unverified requests with HTTP 401. The webhook will still 401 every request
-until you also set its signing secret (`DOCUSIGN_CONNECT_HMAC_SECRET` /
-`VALIDSIGN_CALLBACK_SECRET`).
+unverified requests with HTTP 401.
 
 Listen to the event in `app/Providers/EventServiceProvider.php`:
 
@@ -233,6 +226,10 @@ protected $listen = [
 ];
 ```
 
+The controller resolves the payload's event token against the provider's
+`WebhookEvent` enum before dispatching, so listeners can classify events
+without doing the enum look-up themselves:
+
 ```php
 use LauLamanApps\DocumentSigner\Laravel\Events\DocumentSignerWebhookReceived;
 
@@ -240,13 +237,59 @@ final class HandleSignerWebhook
 {
     public function handle(DocumentSignerWebhookReceived $event): void
     {
-        match ($event->driver) {
-            'docusign'  => $this->onDocuSign($event->payload),
-            'validsign' => $this->onValidSign($event->payload),
+        // Provider-agnostic — same code serves DocuSign and ValidSign once
+        // both enums ship. Null-safe: unknown tokens fall through to default.
+        match (true) {
+            $event->event?->isCompleted() => $this->onCompleted($event->payload),
+            $event->event?->isDeclined()  => $this->onDeclined($event->payload),
+            $event->event?->isFailure()   => $this->pageOncall($event->payload),
+            default                       => null,
         };
     }
 }
 ```
+
+The raw payload is still available on `$event->payload` (and the original
+`Illuminate\Http\Request` on `$event->request`) if you need vendor-specific
+fields.
+
+### Translated event labels
+
+Each `WebhookEvent` can be rendered as a human-readable string via
+`EventTranslator`, backed by the package's translation files:
+
+```php
+use LauLamanApps\DocumentSigner\Laravel\Webhook\EventTranslator;
+use LauLamanApps\DocumentSigner\ValidSign\Webhook\EventType;
+
+public function handle(
+    DocumentSignerWebhookReceived $event,
+    EventTranslator               $labels,
+): void {
+    if ($event->event === null) {
+        return;
+    }
+
+    // "Package complete" in en, "Pakket voltooid" in nl.
+    Log::info($labels->label($event->event));
+
+    // Or force a locale:
+    $subject = $labels->label($event->event, locale: 'nl');
+}
+```
+
+The package ships English (`en`) and Dutch (`nl`) translations for every
+ValidSign event out of the box. To add a locale or override the wording,
+publish the translations and edit the copies:
+
+```bash
+php artisan vendor:publish --tag=document-signer-translations
+# → lang/vendor/document-signer/{en,nl}/validsign-events.php
+```
+
+Translation keys mirror the enum's raw provider tokens verbatim
+(`document-signer::validsign-events.PACKAGE_COMPLETE`), so you can also
+reach them via `trans()` directly.
 
 ## Testing
 

@@ -35,6 +35,13 @@ final class DocumentSignerServiceProvider extends ServiceProvider
             'document-signer',
         );
 
+        $this->loadTranslationsFrom(__DIR__ . '/../resources/lang', 'document-signer');
+
+        $this->publishes(
+            [__DIR__ . '/../resources/lang' => $this->langPath('vendor/document-signer')],
+            'document-signer-translations',
+        );
+
         $this->registerWebhookRoutes();
     }
 
@@ -42,12 +49,7 @@ final class DocumentSignerServiceProvider extends ServiceProvider
     {
         $config = $this->app->make('config');
 
-        if (!(bool) $config->get('document-signer.webhooks.enabled', true)) {
-            return;
-        }
-
-        $drivers = $this->app->make(DocumentSignerManager::class)->configuredDrivers();
-
+        $drivers = $this->driversWithWebhookSecret($config);
         if ($drivers === []) {
             return;
         }
@@ -65,6 +67,30 @@ final class DocumentSignerServiceProvider extends ServiceProvider
             });
     }
 
+    /**
+     * A webhook route is registered per driver iff its signing secret is set.
+     * A webhook with no secret would 401 every request anyway, so treating
+     * secret-presence as the on/off flag keeps the config surface minimal.
+     *
+     * @return list<string>
+     */
+    private function driversWithWebhookSecret(\Illuminate\Contracts\Config\Repository $config): array
+    {
+        $secretPaths = [
+            'docusign'  => 'document-signer.webhooks.docusign.hmac_secret',
+            'validsign' => 'document-signer.webhooks.validsign.callback_secret',
+        ];
+
+        $out = [];
+        foreach ($secretPaths as $driver => $path) {
+            $value = $config->get($path);
+            if (is_string($value) && $value !== '') {
+                $out[] = $driver;
+            }
+        }
+        return $out;
+    }
+
     private function configPath(string $file): string
     {
         $base = $this->app instanceof Application && method_exists($this->app, 'configPath')
@@ -72,5 +98,14 @@ final class DocumentSignerServiceProvider extends ServiceProvider
             : base_path('config/' . $file);
 
         return $base;
+    }
+
+    private function langPath(string $sub): string
+    {
+        if ($this->app instanceof Application && method_exists($this->app, 'langPath')) {
+            return $this->app->langPath($sub);
+        }
+
+        return base_path('lang/' . $sub);
     }
 }

@@ -64,7 +64,7 @@ final class WebhookControllerTest extends TestCase
     #[Test]
     public function it_dispatches_event_when_validsign_token_matches(): void
     {
-        $body = '{"package":"x"}';
+        $body = '{"name":"PACKAGE_COMPLETE","packageId":"x"}';
         $request = Request::create('/x', 'POST',
             server: [
                 'CONTENT_TYPE' => 'application/json',
@@ -81,7 +81,63 @@ final class WebhookControllerTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
         self::assertCount(1, $captured);
         self::assertSame('validsign', $captured[0]->driver);
-        self::assertSame(['package' => 'x'], $captured[0]->payload);
+        self::assertSame(['name' => 'PACKAGE_COMPLETE', 'packageId' => 'x'], $captured[0]->payload);
+        // Controller resolves the payload's event token against the ValidSign enum
+        // before dispatching, so listeners can use the semantic predicates directly.
+        self::assertSame(
+            \LauLamanApps\DocumentSigner\ValidSign\Webhook\EventType::PackageComplete,
+            $captured[0]->event,
+        );
+        self::assertTrue($captured[0]->event?->isCompleted());
+    }
+
+    #[Test]
+    public function it_dispatches_with_a_null_event_when_the_payload_token_is_unknown(): void
+    {
+        $body = '{"name":"MYSTERY_EVENT"}';
+        $request = Request::create('/x', 'POST',
+            server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_AUTHORIZATION' => 'Basic ' . base64_encode('validsign:secret-token'),
+            ],
+            content: $body);
+
+        [$controller, $captured] = $this->buildController([
+            'document-signer.webhooks.validsign.callback_secret' => 'secret-token',
+        ]);
+
+        $controller->validsign($request);
+
+        self::assertCount(1, $captured);
+        self::assertNull($captured[0]->event, 'unknown token collapses to null; raw payload still available');
+    }
+
+    #[Test]
+    public function it_dispatches_with_a_null_event_for_docusign_which_has_no_enum_yet(): void
+    {
+        $body = '{"event":"envelope-completed"}';
+        $secret = 'shhh';
+        $hmac = base64_encode(hash_hmac('sha256', $body, $secret, true));
+
+        $request = Request::create('/x', 'POST',
+            server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_DOCUSIGN_SIGNATURE_1' => $hmac,
+            ],
+            content: $body);
+
+        [$controller, $captured] = $this->buildController([
+            'document-signer.webhooks.docusign.hmac_secret' => $secret,
+        ]);
+
+        $controller->docusign($request);
+
+        self::assertCount(1, $captured);
+        self::assertSame('docusign', $captured[0]->driver);
+        self::assertNull(
+            $captured[0]->event,
+            'DocuSign has no WebhookEvent enum yet, so `event` stays null and listeners fall back to $payload'
+        );
     }
 
     #[Test]

@@ -35,11 +35,11 @@ final class DocumentSignerServiceProviderTest extends TestCase
         self::assertSame($a, $this->app->make('document-signer'));
     }
 
-    public function test_no_webhook_routes_when_no_drivers_are_configured(): void
+    public function test_no_webhook_routes_when_no_secrets_are_configured(): void
     {
         $this->envOverrides = [
-            'document-signer.drivers.validsign.api_key'    => null,
-            'document-signer.drivers.docusign.integration_key' => null,
+            'document-signer.webhooks.docusign.hmac_secret'      => null,
+            'document-signer.webhooks.validsign.callback_secret' => null,
         ];
         $this->refreshApplication();
 
@@ -48,11 +48,11 @@ final class DocumentSignerServiceProviderTest extends TestCase
         self::assertNotContains('document-signer.webhooks.validsign', $routes);
     }
 
-    public function test_only_validsign_webhook_when_only_validsign_configured(): void
+    public function test_only_validsign_webhook_when_only_validsign_secret_is_set(): void
     {
         $this->envOverrides = [
-            'document-signer.drivers.validsign.api_key' => 'k',
-            'document-signer.drivers.docusign.integration_key' => null,
+            'document-signer.webhooks.validsign.callback_secret' => 'vs-secret',
+            'document-signer.webhooks.docusign.hmac_secret'      => null,
         ];
         $this->refreshApplication();
 
@@ -61,11 +61,11 @@ final class DocumentSignerServiceProviderTest extends TestCase
         self::assertNotContains('document-signer.webhooks.docusign', $routes);
     }
 
-    public function test_only_docusign_webhook_when_only_docusign_configured(): void
+    public function test_only_docusign_webhook_when_only_docusign_secret_is_set(): void
     {
         $this->envOverrides = [
-            'document-signer.drivers.validsign.api_key' => null,
-            'document-signer.drivers.docusign.integration_key' => 'i',
+            'document-signer.webhooks.docusign.hmac_secret'      => 'ds-secret',
+            'document-signer.webhooks.validsign.callback_secret' => null,
         ];
         $this->refreshApplication();
 
@@ -74,11 +74,11 @@ final class DocumentSignerServiceProviderTest extends TestCase
         self::assertNotContains('document-signer.webhooks.validsign', $routes);
     }
 
-    public function test_both_webhooks_when_both_drivers_configured(): void
+    public function test_both_webhooks_when_both_secrets_are_set(): void
     {
         $this->envOverrides = [
-            'document-signer.drivers.validsign.api_key' => 'k',
-            'document-signer.drivers.docusign.integration_key' => 'i',
+            'document-signer.webhooks.validsign.callback_secret' => 'vs-secret',
+            'document-signer.webhooks.docusign.hmac_secret'      => 'ds-secret',
         ];
         $this->refreshApplication();
 
@@ -87,12 +87,16 @@ final class DocumentSignerServiceProviderTest extends TestCase
         self::assertContains('document-signer.webhooks.docusign', $routes);
     }
 
-    public function test_webhook_routes_are_skipped_when_enabled_is_false_even_with_credentials_set(): void
+    public function test_driver_credentials_alone_do_not_enable_webhooks(): void
     {
+        // Setting the API key doesn't imply we want to receive webhooks —
+        // only the webhook secret does. Guards against a regression that
+        // would re-couple the two.
         $this->envOverrides = [
-            'document-signer.webhooks.enabled' => false,
-            'document-signer.drivers.validsign.api_key' => 'k',
-            'document-signer.drivers.docusign.integration_key' => 'i',
+            'document-signer.drivers.validsign.api_key'          => 'k',
+            'document-signer.drivers.docusign.integration_key'   => 'i',
+            'document-signer.webhooks.validsign.callback_secret' => null,
+            'document-signer.webhooks.docusign.hmac_secret'      => null,
         ];
         $this->refreshApplication();
 
@@ -101,15 +105,16 @@ final class DocumentSignerServiceProviderTest extends TestCase
         self::assertNotContains('document-signer.webhooks.docusign', $routes);
     }
 
-    public function test_webhook_routes_still_register_when_enabled_defaults_to_true(): void
+    public function test_empty_string_secret_is_treated_as_absent(): void
     {
-        // No explicit `webhooks.enabled` key — should default to true.
+        // Users often clear the .env value to ''; that should behave the
+        // same as never setting it at all.
         $this->envOverrides = [
-            'document-signer.drivers.validsign.api_key' => 'k',
+            'document-signer.webhooks.validsign.callback_secret' => '',
         ];
         $this->refreshApplication();
 
-        self::assertContains('document-signer.webhooks.validsign', $this->routeNames());
+        self::assertNotContains('document-signer.webhooks.validsign', $this->routeNames());
     }
 
     /**

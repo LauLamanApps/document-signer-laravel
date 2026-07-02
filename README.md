@@ -312,6 +312,7 @@ DocumentSigner::set('validsign', new class implements SignatureProvider {
     public function getStatus(string $id): EnvelopeStatus { return EnvelopeStatus::Completed; }
     public function downloadSigned(string $id): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
     public function downloadSignedDocument(string $id, string $documentId): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
+    public function hasAuditTrail(): bool { return true; }
     public function downloadAudit(string $id): \SplFileInfo { return new \SplFileInfo('/dev/null'); }
     public function getFieldValues(string $id): array { return []; }
     public function cancel(string $id, ?string $reason = null): void {}

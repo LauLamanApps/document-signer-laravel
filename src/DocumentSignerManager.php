@@ -26,6 +26,7 @@ use InvalidArgumentException;
  * @method \LauLamanApps\DocumentSigner\Sdk\Envelope\EnvelopeStatus getStatus(string $providerEnvelopeId)
  * @method string downloadSigned(string $providerEnvelopeId)
  * @method \SplFileInfo downloadSignedDocument(string $providerEnvelopeId, string $documentId)
+ * @method bool   hasAuditTrail()
  * @method void   cancel(string $providerEnvelopeId, ?string $reason = null)
  */
 class DocumentSignerManager

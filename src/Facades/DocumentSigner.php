@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \LauLamanApps\DocumentSigner\Sdk\Envelope\EnvelopeStatus    getStatus(string $providerEnvelopeId)
  * @method static string                                          downloadSigned(string $providerEnvelopeId)
  * @method static \SplFileInfo                                     downloadSignedDocument(string $providerEnvelopeId, string $documentId)
+ * @method static bool                                            hasAuditTrail()
  * @method static void                                            cancel(string $providerEnvelopeId, ?string $reason = null)
  * @method static \LauLamanApps\DocumentSigner\Laravel\DocumentSignerManager   extend(string $name, \Closure $factory)
  * @method static \LauLamanApps\DocumentSigner\Laravel\DocumentSignerManager   set(string $name, \LauLamanApps\DocumentSigner\Sdk\Provider\SignatureProvider $provider)

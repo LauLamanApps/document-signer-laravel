@@ -204,7 +204,8 @@ VALIDSIGN_CALLBACK_SECRET=...
 ```
 
 The common prefix (default `document-signer/webhooks`) and middleware
-(default `['api']`) live under `document-signer.webhooks` in the config file.
+(default `['api']`) live under `document-signer.routing` in the config file.
+Each provider's secret lives in its own entry, under `webhook`.
 
 | Provider | Registered when | Route name | URL | Signature mechanism |
 | --- | --- | --- | --- | --- |
@@ -226,9 +227,16 @@ protected $listen = [
 ];
 ```
 
-The controller resolves the payload's event token against the provider's
-`WebhookEvent` enum before dispatching, so listeners can classify events
-without doing the enum look-up themselves:
+Every event carries the originating provider on the envelope as
+`$event->provider` (a class-string) — always set, regardless of the event
+below. The controller also resolves the payload's event token against the
+provider's `WebhookEvent` enum before dispatching, so listeners can classify
+events without doing the enum look-up themselves. `WebhookEvent` is a
+`BackedEnum`; both first-party providers (ValidSign and DocuSign) ship an enum
+with an `Unknown` case, so unmatched tokens resolve to a non-null,
+semantically-inert value rather than `null`. Only a custom provider that
+returns `null` (or ships no enum) yields `$event->event === null`, so keep the
+null-safe operator:
 
 ```php
 use LauLamanApps\DocumentSigner\Laravel\Events\DocumentSignerWebhookReceived;
@@ -237,8 +245,8 @@ final class HandleSignerWebhook
 {
     public function handle(DocumentSignerWebhookReceived $event): void
     {
-        // Provider-agnostic — same code serves DocuSign and ValidSign once
-        // both enums ship. Null-safe: unknown tokens fall through to default.
+        // Provider-agnostic — the same code serves DocuSign and ValidSign.
+        // Null-safe: a null event / Unknown case falls through to `default`.
         match (true) {
             $event->event?->isCompleted() => $this->onCompleted($event->payload),
             $event->event?->isDeclined()  => $this->onDeclined($event->payload),
@@ -246,6 +254,18 @@ final class HandleSignerWebhook
             default                       => null,
         };
     }
+}
+```
+
+Need the originating provider? It's on the envelope as `$event->provider`
+(always present, even when `$event->event` is `null`), so you can branch on it
+unambiguously:
+
+```php
+use LauLamanApps\DocumentSigner\ValidSign\ValidSignProvider;
+
+if ($event->provider === ValidSignProvider::class) {
+    // ValidSign-specific handling; short name is $event->provider::NAME
 }
 ```
 
@@ -260,36 +280,161 @@ Each `WebhookEvent` can be rendered as a human-readable string via
 
 ```php
 use LauLamanApps\DocumentSigner\Laravel\Webhook\EventTranslator;
-use LauLamanApps\DocumentSigner\ValidSign\Webhook\EventType;
 
 public function handle(
     DocumentSignerWebhookReceived $event,
     EventTranslator               $labels,
 ): void {
+    // Nothing to label when the provider ships no enum.
     if ($event->event === null) {
         return;
     }
 
     // "Package complete" in en, "Pakket voltooid" in nl.
-    Log::info($labels->label($event->event));
+    Log::info($labels->label($event->event, $event->provider));
 
     // Or force a locale:
-    $subject = $labels->label($event->event, locale: 'nl');
+    $subject = $labels->label($event->event, $event->provider, locale: 'nl');
 }
 ```
 
 The package ships English (`en`) and Dutch (`nl`) translations for every
-ValidSign event out of the box. To add a locale or override the wording,
-publish the translations and edit the copies:
+ValidSign and DocuSign event out of the box. To add a locale or override the
+wording, publish the translations and edit the copies:
 
 ```bash
 php artisan vendor:publish --tag=document-signer-translations
-# → lang/vendor/document-signer/{en,nl}/validsign-events.php
+# → lang/vendor/document-signer/{en,nl}/{validsign,docusign}-events.php
 ```
 
 Translation keys mirror the enum's raw provider tokens verbatim
-(`document-signer::validsign-events.PACKAGE_COMPLETE`), so you can also
+(`document-signer::validsign-events.PACKAGE_COMPLETE`,
+`document-signer::docusign-events.envelope-completed`), so you can also
 reach them via `trans()` directly.
+
+## Custom providers
+
+Providers are configured as a list under `document-signer.providers`, each
+entry naming a `class`. Nothing about the built-in providers is privileged —
+to add your own signing integration, point an entry at your class:
+
+```php
+// config/document-signer.php
+'providers' => [
+    // ...validsign / docusign entries...
+    [
+        'class'  => \App\Signing\AcmeSignProvider::class,
+        'config' => [
+            'api_key'  => env('ACME_API_KEY'),
+            'base_url' => env('ACME_BASE_URL', 'https://api.acme.example'),
+        ],
+        'webhook' => [
+            'secret' => env('ACME_WEBHOOK_SECRET'),
+        ],
+    ],
+],
+```
+
+Your class needs two things:
+
+1. **Implement the SDK's `SignatureProvider`** — the manager type-guarantees
+   every resolved driver against it. (An entry whose class doesn't implement
+   it is ignored.)
+2. **Declare a `NAME` constant** — this short name is how the provider is
+   selected (`DOCUMENT_SIGNER_DRIVER=acme`, `DocumentSigner::driver('acme')`)
+   and the last segment of its webhook route. A listed class without it throws
+   a clear error.
+
+The manager builds your provider **through the container**, so ordinary
+dependencies auto-wire. Two arguments are supplied by name when you declare
+them — take either, both, or neither:
+
+- `array $config` — the entry's `config` block, so credentials come straight
+  from configuration (no need to read `env()` yourself).
+- `PdfRenderer $pdfRenderer` — the integration-managed renderer (§ *PDF
+  renderer*), for providers that render envelope documents.
+
+```php
+namespace App\Signing;
+
+use LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer;
+use LauLamanApps\DocumentSigner\Sdk\Provider\SignatureProvider;
+
+final class AcmeSignProvider implements SignatureProvider
+{
+    public const string NAME = 'acme';
+
+    public function __construct(
+        private readonly array $config,        // ['api_key' => ..., 'base_url' => ...]
+        private readonly PdfRenderer $pdfRenderer,
+    ) {}
+
+    // send(), getStatus(), downloadSigned(), cancel(), ...
+}
+```
+
+If it's the only provider with a credential set, it's auto-selected as the
+default; otherwise select it with `DOCUMENT_SIGNER_DRIVER=acme`. For wiring
+that's easier to express in code than in config (closures, conditional
+construction), register a factory instead:
+
+```php
+use LauLamanApps\DocumentSigner\Laravel\DocumentSignerManager;
+use LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer;
+
+$this->app->afterResolving(DocumentSignerManager::class, function (DocumentSignerManager $manager) {
+    $manager->extend('acme', fn ($app, array $config) => new AcmeSignProvider(
+        $config,
+        $app->make(PdfRenderer::class),
+    ));
+});
+```
+
+The closure receives the container and the entry's `config` block, and owns
+the whole construction — so it also has to provide the `PdfRenderer` itself
+(bind one, or drop the argument if your provider doesn't render).
+
+### Custom webhooks
+
+To have the package register and verify a webhook route for your provider,
+implement `ProvidesWebhook`. As soon as the entry's `webhook` block holds a
+secret, `POST /{prefix}/{NAME}` is registered — identically to the built-ins,
+including `route:cache` support — and every request is verified before your
+listeners run.
+
+```php
+use LauLamanApps\DocumentSigner\Laravel\Http\SignatureVerification\WebhookSignatureVerifier;
+use LauLamanApps\DocumentSigner\Laravel\Http\Webhook\ProvidesWebhook;
+use LauLamanApps\DocumentSigner\Sdk\Provider\SignatureProvider;
+use LauLamanApps\DocumentSigner\Sdk\Webhook\WebhookEvent;
+use Illuminate\Http\Request;
+
+final class AcmeSignProvider implements SignatureProvider, ProvidesWebhook
+{
+    public const string NAME = 'acme';
+
+    // Built without constructing the provider — no credentials needed just to
+    // authenticate a callback. Receives the entry's `webhook` config block.
+    public static function webhookVerifier(array $webhookConfig): WebhookSignatureVerifier
+    {
+        return new AcmeWebhookVerifier($webhookConfig['secret'] ?? '');
+    }
+
+    // Map the payload to a WebhookEvent so listeners can use the semantic
+    // predicates; return null if you have no event enum.
+    public static function resolveWebhookEvent(array $payload): ?WebhookEvent
+    {
+        return null;
+    }
+}
+```
+
+Your `WebhookSignatureVerifier::verify(Request $request): bool` should compare
+secrets with `hash_equals` for constant-time safety and return `false` for
+anything unproven — the controller turns that into an HTTP 401. Verified
+callbacks are dispatched as the same `DocumentSignerWebhookReceived` event
+(with `driver` set to your `NAME`), so existing listeners handle them
+unchanged.
 
 ## Testing
 

@@ -5,15 +5,15 @@
     "license": "proprietary",
     "require": {
         "php": "^8.5",
-        "laulamanapps/document-signer-sdk": "^1.0",
+        "laulamanapps/document-signer-sdk": "^2.0",
         "illuminate/contracts": "^13.0",
         "illuminate/support": "^13.0",
         "illuminate/http": "^13.0",
         "illuminate/routing": "^13.0"
     },
     "require-dev": {
-        "laulamanapps/document-signer-validsign": "^1.0",
-        "laulamanapps/document-signer-docusign": "^1.0",
+        "laulamanapps/document-signer-validsign": "^2.0",
+        "laulamanapps/document-signer-docusign": "^2.0",
         "orchestra/testbench": "^11.0",
         "phpunit/phpunit": "^11.0",
         "spatie/browsershot": "^4.0 || ^5.0",

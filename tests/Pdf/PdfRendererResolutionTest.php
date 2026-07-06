@@ -8,6 +8,7 @@ use LauLamanApps\DocumentSigner\Laravel\DocumentSignerManager;
 use LauLamanApps\DocumentSigner\Laravel\Pdf\LaravelPdfRenderer;
 use LauLamanApps\DocumentSigner\Sdk\Pdf\BrowsershotPdfRenderer;
 use LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer;
+use LauLamanApps\DocumentSigner\ValidSign\ValidSignProvider;
 use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use PHPUnit\Framework\Attributes\Test;
@@ -95,9 +96,9 @@ final class PdfRendererResolutionTest extends TestCase
         $container = new Container();
         $container->instance('config', new Repository([
             'document-signer' => [
-                'default' => 'validsign',
-                'drivers' => ['validsign' => ['api_key' => 'k']],
-                'pdf'     => ['renderer' => 'laravel-pdf'],
+                'default'   => 'validsign',
+                'providers' => [['class' => ValidSignProvider::class, 'config' => ['api_key' => 'k']]],
+                'pdf'       => ['renderer' => 'laravel-pdf'],
             ],
         ]));
         $container->instance(PdfRenderer::class, $custom);
@@ -116,8 +117,8 @@ final class PdfRendererResolutionTest extends TestCase
         $container = new Container();
         $container->instance('config', new Repository([
             'document-signer' => array_merge([
-                'default' => 'validsign',
-                'drivers' => ['validsign' => ['api_key' => 'k']],
+                'default'   => 'validsign',
+                'providers' => [['class' => ValidSignProvider::class, 'config' => ['api_key' => 'k']]],
             ], $extraDocumentSignerConfig),
         ]));
 

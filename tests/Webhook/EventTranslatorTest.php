@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace LauLamanApps\DocumentSigner\Laravel\Tests\Webhook;
 
+use LauLamanApps\DocumentSigner\DocuSign\DocuSignProvider;
+use LauLamanApps\DocumentSigner\DocuSign\Webhook\EventType as DocuSignEventType;
 use LauLamanApps\DocumentSigner\Laravel\DocumentSignerServiceProvider;
 use LauLamanApps\DocumentSigner\Laravel\Webhook\EventTranslator;
-use LauLamanApps\DocumentSigner\Sdk\Webhook\WebhookEvent;
+use LauLamanApps\DocumentSigner\ValidSign\ValidSignProvider;
 use LauLamanApps\DocumentSigner\ValidSign\Webhook\EventType;
 use Orchestra\Testbench\TestCase;
 use PHPUnit\Framework\Attributes\Test;
@@ -25,9 +27,9 @@ final class EventTranslatorTest extends TestCase
 
         $translator = new EventTranslator($this->app->make('translator'));
 
-        self::assertSame('Package complete',       $translator->label(EventType::PackageComplete));
-        self::assertSame('Signer declined the package', $translator->label(EventType::PackageDecline));
-        self::assertSame('Knowledge-based authentication failed', $translator->label(EventType::KbaFailure));
+        self::assertSame('Package complete',       $translator->label(EventType::PackageComplete, ValidSignProvider::class));
+        self::assertSame('Signer declined the package', $translator->label(EventType::PackageDecline, ValidSignProvider::class));
+        self::assertSame('Knowledge-based authentication failed', $translator->label(EventType::KbaFailure, ValidSignProvider::class));
     }
 
     #[Test]
@@ -35,11 +37,45 @@ final class EventTranslatorTest extends TestCase
     {
         $translator = new EventTranslator($this->app->make('translator'));
 
-        self::assertSame('Pakket voltooid', $translator->label(EventType::PackageComplete, 'nl'));
+        self::assertSame('Pakket voltooid', $translator->label(EventType::PackageComplete, ValidSignProvider::class, 'nl'));
         self::assertSame(
             'Ondertekenaar heeft het pakket geweigerd',
-            $translator->label(EventType::PackageDecline, 'nl'),
+            $translator->label(EventType::PackageDecline, ValidSignProvider::class, 'nl'),
         );
+    }
+
+    #[Test]
+    public function it_translates_a_docusign_event_in_both_locales(): void
+    {
+        $translator = new EventTranslator($this->app->make('translator'));
+
+        self::assertSame(
+            'Envelope completed',
+            $translator->label(DocuSignEventType::EnvelopeCompleted, DocuSignProvider::class, 'en'),
+        );
+        self::assertSame(
+            'Envelop voltooid',
+            $translator->label(DocuSignEventType::EnvelopeCompleted, DocuSignProvider::class, 'nl'),
+        );
+    }
+
+    #[Test]
+    public function every_docusign_case_has_english_and_dutch_translations(): void
+    {
+        $translator = new EventTranslator($this->app->make('translator'));
+
+        foreach (DocuSignEventType::cases() as $case) {
+            if ($case === DocuSignEventType::Unknown) {
+                continue; // synthetic sentinel, intentionally untranslated
+            }
+            foreach (['en', 'nl'] as $locale) {
+                self::assertNotSame(
+                    $case->value,
+                    $translator->label($case, DocuSignProvider::class, $locale),
+                    sprintf('Missing %s translation for %s', $locale, $case->value),
+                );
+            }
+        }
     }
 
     #[Test]
@@ -47,17 +83,9 @@ final class EventTranslatorTest extends TestCase
     {
         $translator = new EventTranslator($this->app->make('translator'));
 
-        $event = new class implements WebhookEvent {
-            public function value(): string    { return 'UNKNOWN_ONE'; }
-            public function provider(): string { return 'validsign'; }
-            public function isCompleted(): bool { return false; }
-            public function isDeclined(): bool  { return false; }
-            public function isFailure(): bool   { return false; }
-            public function isProgress(): bool  { return false; }
-        };
-
+        // The synthetic Unknown case has no translation entry.
         // Never returns Laravel's "translation missing" key — always a printable label.
-        self::assertSame('UNKNOWN_ONE', $translator->label($event));
+        self::assertSame(EventType::Unknown->value, $translator->label(EventType::Unknown, ValidSignProvider::class));
     }
 
     #[Test]
@@ -66,7 +94,10 @@ final class EventTranslatorTest extends TestCase
         $translator = new EventTranslator($this->app->make('translator'));
 
         foreach (EventType::cases() as $case) {
-            $label = $translator->label($case, 'en');
+            if ($case === EventType::Unknown) {
+                continue; // synthetic sentinel, intentionally untranslated
+            }
+            $label = $translator->label($case, ValidSignProvider::class, 'en');
             self::assertNotSame(
                 $case->value,
                 $label,
@@ -81,7 +112,10 @@ final class EventTranslatorTest extends TestCase
         $translator = new EventTranslator($this->app->make('translator'));
 
         foreach (EventType::cases() as $case) {
-            $label = $translator->label($case, 'nl');
+            if ($case === EventType::Unknown) {
+                continue; // synthetic sentinel, intentionally untranslated
+            }
+            $label = $translator->label($case, ValidSignProvider::class, 'nl');
             self::assertNotSame(
                 $case->value,
                 $label,

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace LauLamanApps\DocumentSigner\Laravel\Tests;
 
+use LauLamanApps\DocumentSigner\DocuSign\DocuSignProvider;
 use LauLamanApps\DocumentSigner\Laravel\DocumentSignerManager;
 use LauLamanApps\DocumentSigner\Laravel\DocumentSignerServiceProvider;
+use LauLamanApps\DocumentSigner\Laravel\Tests\Fixtures\AcmeSignProvider;
+use LauLamanApps\DocumentSigner\ValidSign\ValidSignProvider;
 use Illuminate\Routing\Router;
 use Orchestra\Testbench\TestCase;
 
@@ -37,11 +40,7 @@ final class DocumentSignerServiceProviderTest extends TestCase
 
     public function test_no_webhook_routes_when_no_secrets_are_configured(): void
     {
-        $this->envOverrides = [
-            'document-signer.webhooks.docusign.hmac_secret'      => null,
-            'document-signer.webhooks.validsign.callback_secret' => null,
-        ];
-        $this->refreshApplication();
+        $this->withProviders(validsignSecret: null, docusignSecret: null);
 
         $routes = $this->routeNames();
         self::assertNotContains('document-signer.webhooks.docusign', $routes);
@@ -50,11 +49,7 @@ final class DocumentSignerServiceProviderTest extends TestCase
 
     public function test_only_validsign_webhook_when_only_validsign_secret_is_set(): void
     {
-        $this->envOverrides = [
-            'document-signer.webhooks.validsign.callback_secret' => 'vs-secret',
-            'document-signer.webhooks.docusign.hmac_secret'      => null,
-        ];
-        $this->refreshApplication();
+        $this->withProviders(validsignSecret: 'vs-secret', docusignSecret: null);
 
         $routes = $this->routeNames();
         self::assertContains('document-signer.webhooks.validsign', $routes);
@@ -63,11 +58,7 @@ final class DocumentSignerServiceProviderTest extends TestCase
 
     public function test_only_docusign_webhook_when_only_docusign_secret_is_set(): void
     {
-        $this->envOverrides = [
-            'document-signer.webhooks.docusign.hmac_secret'      => 'ds-secret',
-            'document-signer.webhooks.validsign.callback_secret' => null,
-        ];
-        $this->refreshApplication();
+        $this->withProviders(validsignSecret: null, docusignSecret: 'ds-secret');
 
         $routes = $this->routeNames();
         self::assertContains('document-signer.webhooks.docusign', $routes);
@@ -76,11 +67,7 @@ final class DocumentSignerServiceProviderTest extends TestCase
 
     public function test_both_webhooks_when_both_secrets_are_set(): void
     {
-        $this->envOverrides = [
-            'document-signer.webhooks.validsign.callback_secret' => 'vs-secret',
-            'document-signer.webhooks.docusign.hmac_secret'      => 'ds-secret',
-        ];
-        $this->refreshApplication();
+        $this->withProviders(validsignSecret: 'vs-secret', docusignSecret: 'ds-secret');
 
         $routes = $this->routeNames();
         self::assertContains('document-signer.webhooks.validsign', $routes);
@@ -93,10 +80,18 @@ final class DocumentSignerServiceProviderTest extends TestCase
         // only the webhook secret does. Guards against a regression that
         // would re-couple the two.
         $this->envOverrides = [
-            'document-signer.drivers.validsign.api_key'          => 'k',
-            'document-signer.drivers.docusign.integration_key'   => 'i',
-            'document-signer.webhooks.validsign.callback_secret' => null,
-            'document-signer.webhooks.docusign.hmac_secret'      => null,
+            'document-signer.providers' => [
+                [
+                    'class'   => ValidSignProvider::class,
+                    'config'  => ['api_key' => 'k'],
+                    'webhook' => ['callback_secret' => null],
+                ],
+                [
+                    'class'   => DocuSignProvider::class,
+                    'config'  => ['integration_key' => 'i'],
+                    'webhook' => ['hmac_secret' => null],
+                ],
+            ],
         ];
         $this->refreshApplication();
 
@@ -109,12 +104,81 @@ final class DocumentSignerServiceProviderTest extends TestCase
     {
         // Users often clear the .env value to ''; that should behave the
         // same as never setting it at all.
+        $this->withProviders(validsignSecret: '', docusignSecret: null);
+
+        self::assertNotContains('document-signer.webhooks.validsign', $this->routeNames());
+    }
+
+    public function test_custom_provider_with_a_secret_registers_a_webhook_route(): void
+    {
         $this->envOverrides = [
-            'document-signer.webhooks.validsign.callback_secret' => '',
+            'document-signer.providers' => [
+                ['class' => AcmeSignProvider::class, 'webhook' => ['secret' => 'acme-secret']],
+            ],
         ];
         $this->refreshApplication();
 
-        self::assertNotContains('document-signer.webhooks.validsign', $this->routeNames());
+        self::assertContains('document-signer.webhooks.acme', $this->routeNames());
+    }
+
+    public function test_custom_provider_without_a_secret_registers_no_route(): void
+    {
+        $this->envOverrides = [
+            'document-signer.providers' => [
+                ['class' => AcmeSignProvider::class, 'webhook' => ['secret' => null]],
+            ],
+        ];
+        $this->refreshApplication();
+
+        self::assertNotContains('document-signer.webhooks.acme', $this->routeNames());
+    }
+
+    public function test_custom_provider_webhook_verifies_the_request_end_to_end(): void
+    {
+        // Drives the full path: generated route -> provider name bound as a
+        // route default -> WebhookController::custom -> the provider's verifier.
+        $this->envOverrides = [
+            'document-signer.providers' => [
+                ['class' => AcmeSignProvider::class, 'webhook' => ['secret' => 'acme-secret']],
+            ],
+        ];
+        $this->refreshApplication();
+
+        $ok = $this->postJson(
+            '/document-signer/webhooks/acme',
+            ['status' => 'signed'],
+            ['X-Acme-Token' => 'acme-secret'],
+        );
+        $ok->assertStatus(200);
+
+        $rejected = $this->postJson(
+            '/document-signer/webhooks/acme',
+            ['status' => 'signed'],
+            ['X-Acme-Token' => 'wrong'],
+        );
+        $rejected->assertStatus(401);
+    }
+
+    /**
+     * Point `document-signer.providers` at both first-party providers with the
+     * given webhook secrets, then rebuild the application so the service
+     * provider re-registers routes.
+     */
+    private function withProviders(?string $validsignSecret, ?string $docusignSecret): void
+    {
+        $this->envOverrides = [
+            'document-signer.providers' => [
+                [
+                    'class'   => ValidSignProvider::class,
+                    'webhook' => ['callback_secret' => $validsignSecret],
+                ],
+                [
+                    'class'   => DocuSignProvider::class,
+                    'webhook' => ['hmac_secret' => $docusignSecret],
+                ],
+            ],
+        ];
+        $this->refreshApplication();
     }
 
     /**

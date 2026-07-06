@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace LauLamanApps\DocumentSigner\Laravel\Tests\Http\Controllers;
 
+use LauLamanApps\DocumentSigner\DocuSign\DocuSignProvider;
+use LauLamanApps\DocumentSigner\DocuSign\Webhook\EventType as DocuSignEventType;
 use LauLamanApps\DocumentSigner\Laravel\Events\DocumentSignerWebhookReceived;
 use LauLamanApps\DocumentSigner\Laravel\Http\Controllers\WebhookController;
+use LauLamanApps\DocumentSigner\Laravel\Tests\Fixtures\AcmeSignProvider;
+use LauLamanApps\DocumentSigner\ValidSign\ValidSignProvider;
+use LauLamanApps\DocumentSigner\ValidSign\Webhook\EventType;
 use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use Illuminate\Events\Dispatcher;
@@ -19,7 +24,7 @@ final class WebhookControllerTest extends TestCase
     #[Test]
     public function it_dispatches_event_when_docusign_signature_matches(): void
     {
-        $body = '{"event":"completed"}';
+        $body = '{"event":"envelope-completed"}';
         $secret = 'shhh';
         $hmac = base64_encode(hash_hmac('sha256', $body, $secret, true));
 
@@ -30,9 +35,7 @@ final class WebhookControllerTest extends TestCase
             ],
             content: $body);
 
-        [$controller, $captured] = $this->buildController([
-            'document-signer.webhooks.docusign.hmac_secret' => $secret,
-        ]);
+        [$controller, $captured] = $this->buildController(docusignSecret: $secret);
 
         $response = $controller->docusign($request);
 
@@ -40,8 +43,10 @@ final class WebhookControllerTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
         self::assertCount(1, $captured);
         self::assertInstanceOf(DocumentSignerWebhookReceived::class, $captured[0]);
-        self::assertSame('docusign', $captured[0]->driver);
-        self::assertSame(['event' => 'completed'], $captured[0]->payload);
+        self::assertSame(DocuSignProvider::class, $captured[0]->provider);
+        // DocuSign now ships an enum, so the token resolves to a semantic case.
+        self::assertSame(DocuSignEventType::EnvelopeCompleted, $captured[0]->event);
+        self::assertTrue($captured[0]->event->isCompleted());
     }
 
     #[Test]
@@ -51,9 +56,7 @@ final class WebhookControllerTest extends TestCase
             server: ['HTTP_X_DOCUSIGN_SIGNATURE_1' => 'wrong'],
             content: '{"a":1}');
 
-        [$controller, $captured] = $this->buildController([
-            'document-signer.webhooks.docusign.hmac_secret' => 'shhh',
-        ]);
+        [$controller, $captured] = $this->buildController(docusignSecret: 'shhh');
 
         $response = $controller->docusign($request);
 
@@ -72,27 +75,22 @@ final class WebhookControllerTest extends TestCase
             ],
             content: $body);
 
-        [$controller, $captured] = $this->buildController([
-            'document-signer.webhooks.validsign.callback_secret' => 'secret-token',
-        ]);
+        [$controller, $captured] = $this->buildController(validsignSecret: 'secret-token');
 
         $response = $controller->validsign($request);
 
         self::assertSame(200, $response->getStatusCode());
         self::assertCount(1, $captured);
-        self::assertSame('validsign', $captured[0]->driver);
+        self::assertSame(ValidSignProvider::class, $captured[0]->provider);
         self::assertSame(['name' => 'PACKAGE_COMPLETE', 'packageId' => 'x'], $captured[0]->payload);
         // Controller resolves the payload's event token against the ValidSign enum
         // before dispatching, so listeners can use the semantic predicates directly.
-        self::assertSame(
-            \LauLamanApps\DocumentSigner\ValidSign\Webhook\EventType::PackageComplete,
-            $captured[0]->event,
-        );
-        self::assertTrue($captured[0]->event?->isCompleted());
+        self::assertSame(EventType::PackageComplete, $captured[0]->event);
+        self::assertTrue($captured[0]->event->isCompleted());
     }
 
     #[Test]
-    public function it_dispatches_with_a_null_event_when_the_payload_token_is_unknown(): void
+    public function it_resolves_an_unknown_validsign_token_to_the_unknown_case(): void
     {
         $body = '{"name":"MYSTERY_EVENT"}';
         $request = Request::create('/x', 'POST',
@@ -102,20 +100,22 @@ final class WebhookControllerTest extends TestCase
             ],
             content: $body);
 
-        [$controller, $captured] = $this->buildController([
-            'document-signer.webhooks.validsign.callback_secret' => 'secret-token',
-        ]);
+        [$controller, $captured] = $this->buildController(validsignSecret: 'secret-token');
 
         $controller->validsign($request);
 
         self::assertCount(1, $captured);
-        self::assertNull($captured[0]->event, 'unknown token collapses to null; raw payload still available');
+        self::assertSame(ValidSignProvider::class, $captured[0]->provider);
+        // ValidSign's enum has an Unknown case, so an unmatched token stays non-null
+        // and semantically inert; the raw payload is still available.
+        self::assertSame(EventType::Unknown, $captured[0]->event);
+        self::assertFalse($captured[0]->event->isCompleted());
     }
 
     #[Test]
-    public function it_dispatches_with_a_null_event_for_docusign_which_has_no_enum_yet(): void
+    public function it_resolves_an_unknown_docusign_token_to_the_unknown_case(): void
     {
-        $body = '{"event":"envelope-completed"}';
+        $body = '{"event":"envelope-something-new"}';
         $secret = 'shhh';
         $hmac = base64_encode(hash_hmac('sha256', $body, $secret, true));
 
@@ -126,18 +126,15 @@ final class WebhookControllerTest extends TestCase
             ],
             content: $body);
 
-        [$controller, $captured] = $this->buildController([
-            'document-signer.webhooks.docusign.hmac_secret' => $secret,
-        ]);
+        [$controller, $captured] = $this->buildController(docusignSecret: $secret);
 
         $controller->docusign($request);
 
         self::assertCount(1, $captured);
-        self::assertSame('docusign', $captured[0]->driver);
-        self::assertNull(
-            $captured[0]->event,
-            'DocuSign has no WebhookEvent enum yet, so `event` stays null and listeners fall back to $payload'
-        );
+        self::assertSame(DocuSignProvider::class, $captured[0]->provider);
+        // An unmodelled token stays non-null and semantically inert.
+        self::assertSame(DocuSignEventType::Unknown, $captured[0]->event);
+        self::assertFalse($captured[0]->event->isCompleted());
     }
 
     #[Test]
@@ -147,25 +144,81 @@ final class WebhookControllerTest extends TestCase
             server: ['HTTP_AUTHORIZATION' => 'Basic ' . base64_encode('validsign:wrong')],
             content: '{}');
 
-        [$controller, $captured] = $this->buildController([
-            'document-signer.webhooks.validsign.callback_secret' => 'right',
-        ]);
+        [$controller, $captured] = $this->buildController(validsignSecret: 'right');
 
         self::assertSame(401, $controller->validsign($request)->getStatusCode());
         self::assertCount(0, $captured);
     }
 
+    #[Test]
+    public function it_dispatches_event_for_a_custom_provider_when_the_signature_matches(): void
+    {
+        $request = Request::create('/x', 'POST',
+            server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_ACME_TOKEN' => 'acme-secret',
+            ],
+            content: '{"status":"signed"}');
+
+        [$controller, $captured] = $this->buildCustomController('acme-secret');
+
+        $response = $controller->custom($request, 'acme');
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertCount(1, $captured);
+        // The custom provider's class-string is carried on the envelope.
+        self::assertSame(AcmeSignProvider::class, $captured[0]->provider);
+        self::assertSame(['status' => 'signed'], $captured[0]->payload);
+        // AcmeSignProvider ships no event enum, so resolveWebhookEvent returns null.
+        self::assertNull($captured[0]->event);
+    }
+
+    #[Test]
+    public function it_returns_401_for_a_custom_provider_when_the_signature_is_invalid(): void
+    {
+        $request = Request::create('/x', 'POST',
+            server: ['HTTP_X_ACME_TOKEN' => 'wrong'],
+            content: '{}');
+
+        [$controller, $captured] = $this->buildCustomController('acme-secret');
+
+        self::assertSame(401, $controller->custom($request, 'acme')->getStatusCode());
+        self::assertCount(0, $captured);
+    }
+
+    #[Test]
+    public function it_returns_404_when_the_custom_provider_is_not_configured(): void
+    {
+        $request = Request::create('/x', 'POST', server: ['HTTP_X_ACME_TOKEN' => 'x'], content: '{}');
+
+        [$controller, $captured] = $this->buildCustomController('acme-secret');
+
+        self::assertSame(404, $controller->custom($request, 'unregistered')->getStatusCode());
+        self::assertCount(0, $captured);
+    }
+
     /**
-     * @param array<string, mixed> $configDotMap
+     * Build a controller whose config carries the given webhook secrets in the
+     * `document-signer.providers` list (matched by each provider's NAME).
+     *
      * @return array{0: WebhookController, 1: \ArrayObject<int, DocumentSignerWebhookReceived>}
      */
-    private function buildController(array $configDotMap): array
+    private function buildController(?string $validsignSecret = null, ?string $docusignSecret = null): array
     {
-        $items = [];
-        foreach ($configDotMap as $dotKey => $value) {
-            $this->setByDot($items, $dotKey, $value);
-        }
-        $config = new Repository($items);
+        $config = new Repository([
+            'document-signer' => [
+                'providers' => [
+                    [
+                        'class'   => ValidSignProvider::class,
+                        'webhook' => ['callback_secret' => $validsignSecret],
+                    ],
+                    [
+                        'class'   => DocuSignProvider::class,
+                        'webhook' => ['hmac_secret' => $docusignSecret],
+                    ],
+                ],
+            ],
+        ]);
 
         $dispatcher = new Dispatcher(new Container());
         $captured = new \ArrayObject();
@@ -177,21 +230,30 @@ final class WebhookControllerTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $target
+     * As {@see buildController()}, but configures a single custom provider
+     * ({@see AcmeSignProvider}) with the given webhook secret.
+     *
+     * @return array{0: WebhookController, 1: \ArrayObject<int, DocumentSignerWebhookReceived>}
      */
-    private function setByDot(array &$target, string $dotKey, mixed $value): void
+    private function buildCustomController(?string $secret): array
     {
-        $segments = explode('.', $dotKey);
-        $cursor = &$target;
-        foreach ($segments as $i => $segment) {
-            if ($i === count($segments) - 1) {
-                $cursor[$segment] = $value;
-                return;
-            }
-            if (!isset($cursor[$segment]) || !is_array($cursor[$segment])) {
-                $cursor[$segment] = [];
-            }
-            $cursor = &$cursor[$segment];
-        }
+        $config = new Repository([
+            'document-signer' => [
+                'providers' => [
+                    [
+                        'class'   => AcmeSignProvider::class,
+                        'webhook' => ['secret' => $secret],
+                    ],
+                ],
+            ],
+        ]);
+
+        $dispatcher = new Dispatcher(new Container());
+        $captured = new \ArrayObject();
+        $dispatcher->listen(DocumentSignerWebhookReceived::class, static function ($event) use ($captured): void {
+            $captured[] = $event;
+        });
+
+        return [new WebhookController($config, $dispatcher), $captured];
     }
 }

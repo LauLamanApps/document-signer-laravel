@@ -22,6 +22,11 @@ use InvalidArgumentException;
  * resolved driver is guaranteed to implement {@see SignatureProvider}, so
  * static analysis and IDE completion work end-to-end.
  *
+ * Providers are configured as a list under `document-signer.providers`, each
+ * entry naming a `class`. A provider's short name — used by `driver('...')`,
+ * the `default` selector and webhook routing — is the `NAME` constant on that
+ * class, so there is no separate key to keep in sync.
+ *
  * @method \LauLamanApps\DocumentSigner\Sdk\Provider\EnvelopeReceipt send(\LauLamanApps\DocumentSigner\Sdk\Envelope\Envelope $envelope)
  * @method \LauLamanApps\DocumentSigner\Sdk\Envelope\EnvelopeStatus getStatus(string $providerEnvelopeId)
  * @method string downloadSigned(string $providerEnvelopeId)
@@ -31,6 +36,19 @@ use InvalidArgumentException;
  */
 class DocumentSignerManager
 {
+    /**
+     * Per-class primary credential key. A provider counts as "configured" (and
+     * so eligible for auto-selection as the default) when this key is set in
+     * its `config`. Custom providers with no entry here count as configured
+     * whenever they carry any config at all.
+     *
+     * @var array<class-string<SignatureProvider>, string>
+     */
+    private const PRIMARY_CREDENTIAL = [
+        ValidSignProvider::class => 'api_key',
+        DocuSignProvider::class  => 'integration_key',
+    ];
+
     /** @var array<string, SignatureProvider> */
     private array $drivers = [];
 
@@ -90,7 +108,7 @@ class DocumentSignerManager
         return match (count($configured)) {
             1 => $configured[0],
             0 => throw new InvalidArgumentException(
-                'No document-signer driver is configured. Set at least one driver credential '
+                'No document-signer driver is configured. Set at least one provider credential '
                 . '(VALIDSIGN_API_KEY, DOCUSIGN_INTEGRATION_KEY, ...) or set DOCUMENT_SIGNER_DRIVER explicitly.'
             ),
             default => throw new InvalidArgumentException(sprintf(
@@ -102,26 +120,40 @@ class DocumentSignerManager
     }
 
     /**
-     * Names of the built-in drivers whose primary credential is present in config.
+     * Names of the configured providers whose primary credential is present.
      *
      * @return list<string>
      */
     public function configuredDrivers(): array
     {
-        $primaryCredentials = [
-            'docusign'  => 'integration_key',
-            'validsign' => 'api_key',
-        ];
-
         $configured = [];
-        foreach ($primaryCredentials as $driver => $credentialKey) {
-            $value = $this->config("document-signer.drivers.{$driver}.{$credentialKey}");
-            if (is_string($value) && $value !== '') {
-                $configured[] = $driver;
+        foreach ($this->providerList() as $entry) {
+            if ($this->isConfigured($entry['class'], $entry['config'])) {
+                $configured[] = $entry['name'];
             }
         }
 
+        sort($configured);
+
         return $configured;
+    }
+
+    /**
+     * @param class-string<SignatureProvider> $class
+     * @param array<string, mixed>            $config
+     */
+    private function isConfigured(string $class, array $config): bool
+    {
+        $credentialKey = self::PRIMARY_CREDENTIAL[$class] ?? null;
+
+        if ($credentialKey === null) {
+            // Custom provider: presence of any config is enough to count it.
+            return $config !== [];
+        }
+
+        $value = $config[$credentialKey] ?? null;
+
+        return is_string($value) && $value !== '';
     }
 
     /**
@@ -134,17 +166,44 @@ class DocumentSignerManager
 
     private function resolve(string $name): SignatureProvider
     {
-        $config = $this->driverConfig($name);
-
         if (isset($this->customCreators[$name])) {
-            return ($this->customCreators[$name])($this->container, $config);
+            $entry = $this->findEntry($name);
+
+            return ($this->customCreators[$name])($this->container, $entry['config'] ?? []);
         }
 
-        return match ($name) {
-            'validsign' => $this->createValidSignDriver($config),
-            'docusign'  => $this->createDocuSignDriver($config),
-            default     => throw new InvalidArgumentException("Unknown document-signer driver: '{$name}'."),
+        $entry = $this->requireEntry($name);
+
+        return match ($entry['class']) {
+            ValidSignProvider::class => $this->createValidSignDriver($entry['config']),
+            DocuSignProvider::class  => $this->createDocuSignDriver($entry['config']),
+            default                  => $this->createConfiguredDriver($entry['class'], $entry['config']),
         };
+    }
+
+    /**
+     * Build an app-owned provider through the container, so its own
+     * dependencies auto-wire. Two constructor arguments are supplied by name
+     * when the provider declares them:
+     *  - `$config`      the entry's `config` array, so a provider can take its
+     *                   credentials straight from configuration.
+     *  - `$pdfRenderer` the integration-managed {@see PdfRenderer}, for
+     *                   providers that render documents themselves.
+     * Either may be omitted from the constructor; unused arguments are ignored.
+     *
+     * This is the extension point for providers that shouldn't ship in this
+     * package: add an entry to `document-signer.providers` whose `class` points
+     * at your {@see SignatureProvider} and select it by its `NAME`.
+     *
+     * @param class-string<SignatureProvider> $class
+     * @param array<string, mixed>            $config
+     */
+    private function createConfiguredDriver(string $class, array $config): SignatureProvider
+    {
+        return $this->container->make($class, [
+            'config'      => $config,
+            'pdfRenderer' => $this->resolvePdfRenderer(),
+        ]);
     }
 
     /**
@@ -161,7 +220,7 @@ class DocumentSignerManager
         $apiKey = (string) ($config['api_key'] ?? '');
         if ($apiKey === '') {
             throw new InvalidArgumentException(
-                'ValidSign API key missing. Set VALIDSIGN_API_KEY or document-signer.drivers.validsign.api_key.'
+                'ValidSign API key missing. Set VALIDSIGN_API_KEY or the api_key of the validsign provider entry.'
             );
         }
 
@@ -231,17 +290,90 @@ class DocumentSignerManager
     }
 
     /**
-     * @return array<string, mixed>
+     * The configured provider entry for a short name, or `null` when none match.
+     *
+     * @return array{name: string, class: class-string<SignatureProvider>, config: array<string, mixed>, webhook: array<string, mixed>}|null
      */
-    private function driverConfig(string $name): array
+    private function findEntry(string $name): ?array
     {
-        $config = $this->config("document-signer.drivers.{$name}");
-
-        if (!is_array($config)) {
-            throw new InvalidArgumentException("No configuration found for document-signer driver '{$name}'.");
+        foreach ($this->providerList() as $entry) {
+            if ($entry['name'] === $name) {
+                return $entry;
+            }
         }
 
-        return $config;
+        return null;
+    }
+
+    /**
+     * @return array{name: string, class: class-string<SignatureProvider>, config: array<string, mixed>, webhook: array<string, mixed>}
+     */
+    private function requireEntry(string $name): array
+    {
+        $entry = $this->findEntry($name);
+
+        if ($entry === null) {
+            throw new InvalidArgumentException(
+                "Unknown document-signer driver: '{$name}'. Add an entry to document-signer.providers whose "
+                . 'class exposes a matching NAME constant, or register it via DocumentSignerManager::extend().'
+            );
+        }
+
+        return $entry;
+    }
+
+    /**
+     * Normalised list of configured providers, keyed positionally.
+     *
+     * Entries whose `class` is absent or does not implement
+     * {@see SignatureProvider} are skipped — referencing an uninstalled
+     * provider in config is harmless. Entries whose class lacks a `NAME`
+     * constant are a misconfiguration and throw.
+     *
+     * @return list<array{name: string, class: class-string<SignatureProvider>, config: array<string, mixed>, webhook: array<string, mixed>}>
+     */
+    private function providerList(): array
+    {
+        $providers = $this->config('document-signer.providers');
+        if (!is_array($providers)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($providers as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $class = $entry['class'] ?? null;
+            if (!is_string($class) || !is_a($class, SignatureProvider::class, true)) {
+                continue;
+            }
+
+            $out[] = [
+                'name'    => $this->providerName($class),
+                'class'   => $class,
+                'config'  => is_array($entry['config'] ?? null) ? $entry['config'] : [],
+                'webhook' => is_array($entry['webhook'] ?? null) ? $entry['webhook'] : [],
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param class-string<SignatureProvider> $class
+     */
+    private function providerName(string $class): string
+    {
+        if (!defined("{$class}::NAME")) {
+            throw new InvalidArgumentException(sprintf(
+                'Provider %s must declare a `public const string NAME` to be listed in document-signer.providers.',
+                $class,
+            ));
+        }
+
+        return (string) constant("{$class}::NAME");
     }
 
     private function config(string $key): mixed

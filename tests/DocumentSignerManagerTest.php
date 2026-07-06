@@ -6,7 +6,10 @@ namespace LauLamanApps\DocumentSigner\Laravel\Tests;
 
 use LauLamanApps\DocumentSigner\DocuSign\DocuSignProvider;
 use LauLamanApps\DocumentSigner\Laravel\DocumentSignerManager;
+use LauLamanApps\DocumentSigner\Laravel\Tests\Fixtures\ConfigurableTestProvider;
 use LauLamanApps\DocumentSigner\Sdk\Envelope\EnvelopeStatus;
+use LauLamanApps\DocumentSigner\Sdk\Pdf\PageDecoration;
+use LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer;
 use LauLamanApps\DocumentSigner\Sdk\Provider\EnvelopeReceipt;
 use LauLamanApps\DocumentSigner\Sdk\Provider\SignatureProvider;
 use LauLamanApps\DocumentSigner\ValidSign\ValidSignProvider;
@@ -33,8 +36,8 @@ final class DocumentSignerManagerTest extends TestCase
     {
         $manager = $this->makeManager([
             'default' => 'validsign',
-            'drivers' => [
-                'validsign' => ['api_key' => 'k'],
+            'providers' => [
+                $this->validsign(['api_key' => 'k']),
             ],
         ]);
 
@@ -50,12 +53,12 @@ final class DocumentSignerManagerTest extends TestCase
 
         $manager = $this->makeManager([
             'default' => 'validsign',
-            'drivers' => [
-                'validsign' => ['api_key' => 'k'],
-                'docusign'  => [
+            'providers' => [
+                $this->validsign(['api_key' => 'k']),
+                $this->docusign([
                     'integration_key' => 'i', 'user_id' => 'u', 'account_id' => 'a',
                     'private_key' => self::$rsaPem,
-                ],
+                ]),
             ],
         ]);
 
@@ -68,7 +71,7 @@ final class DocumentSignerManagerTest extends TestCase
     {
         $manager = $this->makeManager([
             'default' => 'validsign',
-            'drivers' => ['validsign' => ['api_key' => 'k']],
+            'providers' => [$this->validsign(['api_key' => 'k'])],
         ]);
 
         self::assertSame($manager->driver(), $manager->driver());
@@ -80,7 +83,7 @@ final class DocumentSignerManagerTest extends TestCase
         $fake = $this->fakeProvider();
         $manager = $this->makeManager([
             'default' => 'validsign',
-            'drivers' => ['validsign' => ['api_key' => 'k']],
+            'providers' => [$this->validsign(['api_key' => 'k'])],
         ]);
 
         $manager->set('validsign', $fake);
@@ -94,7 +97,7 @@ final class DocumentSignerManagerTest extends TestCase
         $fake = $this->fakeProvider();
         $manager = $this->makeManager([
             'default' => 'hellosign',
-            'drivers' => ['hellosign' => ['anything' => true]],
+            'providers' => [],
         ]);
 
         $manager->extend('hellosign', static fn () => $fake);
@@ -107,7 +110,7 @@ final class DocumentSignerManagerTest extends TestCase
     {
         $manager = $this->makeManager([
             'default' => 'validsign',
-            'drivers' => ['validsign' => ['api_key' => '']],
+            'providers' => [$this->validsign(['api_key' => ''])],
         ]);
 
         $this->expectException(\InvalidArgumentException::class);
@@ -119,7 +122,7 @@ final class DocumentSignerManagerTest extends TestCase
     #[Test]
     public function it_throws_when_no_drivers_are_configured_and_no_default_is_set(): void
     {
-        $manager = $this->makeManager(['drivers' => []]);
+        $manager = $this->makeManager(['providers' => []]);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('No document-signer driver is configured');
@@ -131,9 +134,9 @@ final class DocumentSignerManagerTest extends TestCase
     public function it_auto_selects_the_sole_configured_driver_when_no_default_is_set(): void
     {
         $manager = $this->makeManager([
-            'drivers' => [
-                'validsign' => ['api_key' => 'k'],
-                'docusign'  => ['integration_key' => null],
+            'providers' => [
+                $this->validsign(['api_key' => 'k']),
+                $this->docusign(['integration_key' => null]),
             ],
         ]);
 
@@ -149,12 +152,12 @@ final class DocumentSignerManagerTest extends TestCase
         }
 
         $manager = $this->makeManager([
-            'drivers' => [
-                'validsign' => ['api_key' => null],
-                'docusign'  => [
+            'providers' => [
+                $this->validsign(['api_key' => null]),
+                $this->docusign([
                     'integration_key' => 'i', 'user_id' => 'u', 'account_id' => 'a',
                     'private_key' => self::$rsaPem,
-                ],
+                ]),
             ],
         ]);
 
@@ -166,9 +169,9 @@ final class DocumentSignerManagerTest extends TestCase
     public function it_throws_a_multi_driver_hint_when_more_than_one_is_configured_and_no_default_is_set(): void
     {
         $manager = $this->makeManager([
-            'drivers' => [
-                'validsign' => ['api_key' => 'k'],
-                'docusign'  => ['integration_key' => 'i'],
+            'providers' => [
+                $this->validsign(['api_key' => 'k']),
+                $this->docusign(['integration_key' => 'i']),
             ],
         ]);
 
@@ -187,12 +190,12 @@ final class DocumentSignerManagerTest extends TestCase
 
         $manager = $this->makeManager([
             'default' => 'docusign',
-            'drivers' => [
-                'validsign' => ['api_key' => 'k'],
-                'docusign'  => [
+            'providers' => [
+                $this->validsign(['api_key' => 'k']),
+                $this->docusign([
                     'integration_key' => 'i', 'user_id' => 'u', 'account_id' => 'a',
                     'private_key' => self::$rsaPem,
-                ],
+                ]),
             ],
         ]);
 
@@ -204,13 +207,113 @@ final class DocumentSignerManagerTest extends TestCase
     {
         $manager = $this->makeManager([
             'default' => 'wat',
-            'drivers' => ['wat' => []],
+            'providers' => [],
         ]);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage("Unknown document-signer driver: 'wat'");
 
         $manager->driver('wat');
+    }
+
+    #[Test]
+    public function it_resolves_a_configured_custom_provider_and_injects_the_pdf_renderer(): void
+    {
+        $renderer = $this->fakeRenderer();
+        $container = new Container();
+        $container->instance('config', new Repository([
+            'document-signer' => [
+                'default' => 'internal',
+                'providers' => [
+                    ['class' => ConfigurableTestProvider::class, 'config' => ['enabled' => true]],
+                ],
+            ],
+        ]));
+        $container->instance(PdfRenderer::class, $renderer);
+
+        $manager = new DocumentSignerManager($container);
+        $provider = $manager->driver('internal');
+
+        self::assertInstanceOf(ConfigurableTestProvider::class, $provider);
+        self::assertSame($renderer, $provider->pdfRenderer);
+    }
+
+    #[Test]
+    public function it_passes_the_entry_config_to_a_custom_provider(): void
+    {
+        $renderer = $this->fakeRenderer();
+        $container = new Container();
+        $container->instance('config', new Repository([
+            'document-signer' => [
+                'default' => 'internal',
+                'providers' => [
+                    [
+                        'class'  => ConfigurableTestProvider::class,
+                        'config' => ['api_key' => 'acme-secret', 'region' => 'eu'],
+                    ],
+                ],
+            ],
+        ]));
+        $container->instance(PdfRenderer::class, $renderer);
+
+        $manager = new DocumentSignerManager($container);
+        $provider = $manager->driver('internal');
+
+        self::assertInstanceOf(ConfigurableTestProvider::class, $provider);
+        self::assertSame(['api_key' => 'acme-secret', 'region' => 'eu'], $provider->config);
+        self::assertSame($renderer, $provider->pdfRenderer);
+    }
+
+    #[Test]
+    public function it_ignores_provider_entries_whose_class_is_not_a_signature_provider(): void
+    {
+        $manager = $this->makeManager([
+            'providers' => [
+                ['class' => \stdClass::class, 'config' => ['enabled' => true]],
+            ],
+        ]);
+
+        self::assertSame([], $manager->configuredDrivers());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('No document-signer driver is configured');
+
+        $manager->driver();
+    }
+
+    #[Test]
+    public function it_throws_when_a_provider_class_has_no_name_constant(): void
+    {
+        $namelessClass = $this->fakeProvider()::class;
+
+        $manager = $this->makeManager([
+            'providers' => [
+                ['class' => $namelessClass, 'config' => ['enabled' => true]],
+            ],
+        ]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must declare a `public const string NAME`');
+
+        $manager->getDefaultDriver();
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     * @return array{class: class-string, config: array<string, mixed>}
+     */
+    private function validsign(array $config): array
+    {
+        return ['class' => ValidSignProvider::class, 'config' => $config];
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     * @return array{class: class-string, config: array<string, mixed>}
+     */
+    private function docusign(array $config): array
+    {
+        return ['class' => DocuSignProvider::class, 'config' => $config];
     }
 
     /**
@@ -222,6 +325,16 @@ final class DocumentSignerManagerTest extends TestCase
         $container->instance('config', new Repository(['document-signer' => $documentSignerConfig]));
 
         return new DocumentSignerManager($container);
+    }
+
+    private function fakeRenderer(): PdfRenderer
+    {
+        return new class implements PdfRenderer {
+            public function render(string $html, ?PageDecoration $decoration = null): string
+            {
+                return '';
+            }
+        };
     }
 
     private function fakeProvider(): SignatureProvider

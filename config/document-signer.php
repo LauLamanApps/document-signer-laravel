@@ -155,4 +155,55 @@ return [
         'renderer' => env('DOCUMENT_SIGNER_PDF_RENDERER', 'browsershot'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Recipient override (dev / staging)
+    |--------------------------------------------------------------------------
+    |
+    | Rewrites every signer's email address before an envelope is sent. Seeded
+    | and development data is full of reserved domains (`example.com`, `*.test`,
+    | ...) that providers like ValidSign reject outright. Turning this on in
+    | non-production redirects those envelopes to a real inbox you control
+    | instead of failing at the provider — real customer mail is never sent.
+    |
+    | KEEP `enabled` FALSE IN PRODUCTION. When disabled there is zero overhead:
+    | the real provider is used directly and no wrapper is installed.
+    |
+    | `strategy` — how each address is rewritten (you pick what fits your setup):
+    |
+    |   'catch_all' (default)
+    |       Everyone goes to `to`, with the original address folded into a
+    |       `+tag` so each signer stays a distinct recipient (ValidSign rejects
+    |       duplicate recipients on one package) while all mail lands in one box.
+    |         alice@example.com -> dev+alice=example.com@you.test
+    |
+    |   'domain'
+    |       Keep the local part, swap only the domain for `domain`. Recipients
+    |       stay unique; needs a catch-all inbox on that domain to receive them.
+    |         alice@example.com -> alice@you.test
+    |
+    |   'redirect'
+    |       Send everyone to `to` verbatim. Simplest, but multiple signers on one
+    |       envelope collapse to the same address (a provider may reject that).
+    |         alice@example.com -> dev@you.test
+    |
+    | `only_domains` — scope guard. When non-empty, ONLY addresses whose domain
+    | matches an entry are rewritten; everything else passes through untouched,
+    | so a real address is never hijacked even if this is left on by mistake.
+    | Entries match case-insensitively; a `*.` prefix does a suffix match
+    | (`*.test` matches `foo.test`). Set to `[]` to rewrite every address.
+    |
+    */
+
+    'recipient_override' => [
+        'enabled'  => env('DOCUMENT_SIGNER_OVERRIDE_ENABLED', false),
+        'strategy' => env('DOCUMENT_SIGNER_OVERRIDE_STRATEGY', 'catch_all'),
+        'to'       => env('DOCUMENT_SIGNER_OVERRIDE_TO'),
+        'domain'   => env('DOCUMENT_SIGNER_OVERRIDE_DOMAIN'),
+        'only_domains' => [
+            'example.com', 'example.org', 'example.net', 'example.edu',
+            '*.test', '*.example', '*.invalid', '*.local',
+        ],
+    ],
+
 ];

@@ -7,6 +7,8 @@ namespace LauLamanApps\DocumentSigner\Laravel;
 use LauLamanApps\DocumentSigner\DocuSign\DocuSignConfig;
 use LauLamanApps\DocumentSigner\DocuSign\DocuSignProvider;
 use LauLamanApps\DocumentSigner\Laravel\Pdf\LaravelPdfRenderer;
+use LauLamanApps\DocumentSigner\Laravel\RecipientOverride\OverridingSignatureProvider;
+use LauLamanApps\DocumentSigner\Laravel\RecipientOverride\RecipientRewriter;
 use LauLamanApps\DocumentSigner\Sdk\Pdf\BrowsershotPdfRenderer;
 use LauLamanApps\DocumentSigner\Sdk\Pdf\PdfRenderer;
 use LauLamanApps\DocumentSigner\Sdk\Provider\SignatureProvider;
@@ -63,7 +65,24 @@ class DocumentSignerManager
     {
         $name ??= $this->getDefaultDriver();
 
-        return $this->drivers[$name] ??= $this->resolve($name);
+        return $this->drivers[$name] ??= $this->withRecipientOverride($this->resolve($name));
+    }
+
+    /**
+     * Wrap a resolved provider so signer emails are rewritten before every
+     * send, when `document-signer.recipient_override.enabled` is on. Returns the
+     * provider untouched otherwise — production pays no overhead.
+     *
+     * Drivers seeded via {@see set()} bypass this on purpose: tests inject an
+     * exact instance and expect it back.
+     */
+    private function withRecipientOverride(SignatureProvider $provider): SignatureProvider
+    {
+        $rewriter = RecipientRewriter::fromConfig($this->config('document-signer.recipient_override'));
+
+        return $rewriter === null
+            ? $provider
+            : new OverridingSignatureProvider($provider, $rewriter);
     }
 
     /**

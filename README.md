@@ -4,6 +4,28 @@ Laravel integration for the [Document Signer SDK](https://github.com/LauLamanApp
 provider, driver manager, facade, and verified webhook routes for both
 ValidSign and DocuSign.
 
+## Contents
+
+- [Install](#install)
+- [Configure](#configure)
+  - [Default driver](#default-driver)
+- [Sending an envelope](#sending-an-envelope)
+- [Recipient override (dev / staging)](#recipient-override-dev--staging)
+  - [Strategy](#strategy)
+  - [Scope](#scope)
+- [Blade components](#blade-components)
+- [PDF renderer](#pdf-renderer)
+  - [Default: install spatie/browsershot](#default-install-spatiebrowsershot)
+  - [Use spatie/laravel-pdf](#use-spatielaravel-pdf)
+  - [Bind a fully custom renderer](#bind-a-fully-custom-renderer)
+- [Webhooks](#webhooks)
+  - [Translated event labels](#translated-event-labels)
+- [Custom providers](#custom-providers)
+  - [Custom webhooks](#custom-webhooks)
+- [Testing](#testing)
+- [Requirements](#requirements)
+- [Documentation](#documentation)
+
 ## Install
 
 ```bash
@@ -86,6 +108,61 @@ use LauLamanApps\DocumentSigner\Laravel\DocumentSignerManager;
 
 public function __construct(private DocumentSignerManager $signer) {}
 ```
+
+## Recipient override (dev / staging)
+
+Seeded and development data is full of reserved domains — `example.com`,
+`*.test`, and friends — that providers like ValidSign reject outright, so an
+otherwise-valid envelope fails the moment you try to send it. The recipient
+override rewrites every signer's email **before** the envelope reaches the
+provider, redirecting those addresses to a real inbox you control instead.
+
+It is off by default and adds zero overhead when disabled — the real provider
+is used directly, no wrapper installed. **Keep it off in production.**
+
+```dotenv
+DOCUMENT_SIGNER_OVERRIDE_ENABLED=true
+DOCUMENT_SIGNER_OVERRIDE_TO=you@yourdomain.test
+```
+
+That's the whole setup for the default (`catch_all`) strategy. It applies on
+every send path — `DocumentSigner::send()`, `DocumentSigner::driver('validsign')->send()`,
+and a manually resolved instance alike.
+
+### Strategy
+
+`DOCUMENT_SIGNER_OVERRIDE_STRATEGY` chooses *how* each address is rewritten.
+Given `DOCUMENT_SIGNER_OVERRIDE_TO=dev@you.test` (or
+`DOCUMENT_SIGNER_OVERRIDE_DOMAIN=you.test`):
+
+| Strategy | `alice@example.com` becomes | Notes |
+| --- | --- | --- |
+| `catch_all` *(default)* | `dev+alice=example.com@you.test` | Everyone lands in one inbox, but the original address is folded into a `+tag` so each signer stays a **distinct** recipient. ValidSign rejects duplicate recipients on one package, so this is the safe default for multi-signer envelopes. Requires `…_TO`. |
+| `domain` | `alice@you.test` | Keeps the local part, swaps only the domain. Recipients stay unique; you need a catch-all inbox on that domain to actually receive the mail. Requires `…_DOMAIN`. |
+| `redirect` | `dev@you.test` | Sends everyone to `…_TO` verbatim. Simplest, but multiple signers on one envelope collapse to the same address (a provider may reject that) — use for single-signer flows only. Requires `…_TO`. |
+
+A misconfigured-but-enabled override (e.g. `catch_all` with no `…_TO`) throws a
+clear `InvalidArgumentException` on the first send, rather than silently
+misrouting mail.
+
+### Scope
+
+By default only reserved/test domains are rewritten — real customer addresses
+always pass through untouched, even if you leave the override enabled by
+mistake. The list lives under `recipient_override.only_domains` in the config
+file:
+
+```php
+// config/document-signer.php
+'only_domains' => [
+    'example.com', 'example.org', 'example.net', 'example.edu',
+    '*.test', '*.example', '*.invalid', '*.local',
+],
+```
+
+Entries match case-insensitively; a `*.` prefix does a suffix match (`*.test`
+matches `foo.test`). Set `only_domains` to `[]` to rewrite **every** address
+regardless of domain.
 
 ## Blade components
 

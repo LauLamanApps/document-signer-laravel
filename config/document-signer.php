@@ -187,11 +187,17 @@ return [
     |       envelope collapse to the same address (a provider may reject that).
     |         alice@example.com -> dev@you.test
     |
-    | `only_domains` — scope guard. When non-empty, ONLY addresses whose domain
-    | matches an entry are rewritten; everything else passes through untouched,
-    | so a real address is never hijacked even if this is left on by mistake.
+    | `only_domains` — optional scope narrowing. Empty (the default) rewrites
+    | EVERY signer address once the override is enabled — the `enabled` flag
+    | above is the only guard, so keep it off in production. Add entries only
+    | when you want to restrict the rewrite to specific domains and let all
+    | others pass through untouched (e.g. redirect just seeded `*.test` data
+    | while real addresses go out for real):
+    |
+    |   'only_domains' => ['example.com', '*.test', '*.local'],
+    |
     | Entries match case-insensitively; a `*.` prefix does a suffix match
-    | (`*.test` matches `foo.test`). Set to `[]` to rewrite every address.
+    | (`*.test` matches `foo.test`).
     |
     */
 
@@ -200,10 +206,7 @@ return [
         'strategy' => env('DOCUMENT_SIGNER_OVERRIDE_STRATEGY', 'catch_all'),
         'to'       => env('DOCUMENT_SIGNER_OVERRIDE_TO'),
         'domain'   => env('DOCUMENT_SIGNER_OVERRIDE_DOMAIN'),
-        'only_domains' => [
-            'example.com', 'example.org', 'example.net', 'example.edu',
-            '*.test', '*.example', '*.invalid', '*.local',
-        ],
+        'only_domains' => [],
     ],
 
 ];

@@ -147,22 +147,18 @@ misrouting mail.
 
 ### Scope
 
-By default only reserved/test domains are rewritten — real customer addresses
-always pass through untouched, even if you leave the override enabled by
-mistake. The list lives under `recipient_override.only_domains` in the config
-file:
+By default (`only_domains` empty) **every** signer address is rewritten once
+the override is enabled — the `enabled` flag is the only guard, so keep it off
+in production. Add entries only to *narrow* the rewrite to specific domains and
+let all others pass through untouched:
 
 ```php
-// config/document-signer.php
-'only_domains' => [
-    'example.com', 'example.org', 'example.net', 'example.edu',
-    '*.test', '*.example', '*.invalid', '*.local',
-],
+// config/document-signer.php — rewrite only seeded/test data, leave the rest
+'only_domains' => ['example.com', '*.test', '*.local'],
 ```
 
 Entries match case-insensitively; a `*.` prefix does a suffix match (`*.test`
-matches `foo.test`). Set `only_domains` to `[]` to rewrite **every** address
-regardless of domain.
+matches `foo.test`).
 
 ## Blade components
 

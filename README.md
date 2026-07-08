@@ -63,6 +63,15 @@ DOCUSIGN_ACCOUNT_ID=...
 DOCUSIGN_PRIVATE_KEY_PATH=/path/to/private.pem
 ```
 
+DocuSign fields are anchored to their `{[type:signer:name]}` placeholders and
+land on the placeholder's top edge (matching ValidSign). If a whole document
+still sits slightly high or low on your account, nudge every field without a
+code change — positive moves fields down, negative up:
+
+```dotenv
+DOCUSIGN_ANCHOR_Y_OFFSET_PIXELS=6
+```
+
 ### Default driver
 
 `DOCUMENT_SIGNER_DRIVER` is optional. If left unset the manager auto-selects

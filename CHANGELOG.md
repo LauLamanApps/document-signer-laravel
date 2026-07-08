@@ -3,6 +3,15 @@
 All notable changes to `laulamanapps/document-signer-laravel` are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] - 2026-07-08
+
+### Added
+
+- Expose DocuSign's field-placement fine-tune as the `anchor_y_offset_pixels`
+  provider config value (env `DOCUSIGN_ANCHOR_Y_OFFSET_PIXELS`), passed through
+  to `DocuSignConfig`. Positive moves every field down the page, negative up;
+  default 0. Requires `laulamanapps/document-signer-docusign` ≥ 2.3.2.
+
 ## [2.3.0] - 2026-07-08
 
 ### Changed — single-document download is now provider-agnostic

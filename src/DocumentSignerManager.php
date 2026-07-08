@@ -280,6 +280,7 @@ class DocumentSignerManager
                 accessTokenTtlSeconds: (int)    ($config['access_token_ttl'] ?? 3600),
                 timeoutSeconds:        (int)    ($config['timeout'] ?? 15),
                 uploadTimeoutSeconds:  (int)    ($config['upload_timeout'] ?? 60),
+                anchorYOffsetPixels:   (int)    ($config['anchor_y_offset_pixels'] ?? 0),
             ),
             pdfRenderer: $this->resolvePdfRenderer(),
         );

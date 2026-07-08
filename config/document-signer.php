@@ -86,6 +86,12 @@ return [
                 'access_token_ttl'   => (int) env('DOCUSIGN_ACCESS_TOKEN_TTL', 3600),
                 'timeout'            => (int) env('DOCUSIGN_TIMEOUT', 15),
                 'upload_timeout'     => (int) env('DOCUSIGN_UPLOAD_TIMEOUT', 60),
+
+                // Vertical fine-tune (pixels) for signature/field placement. The
+                // driver already lands each field's top edge on its placeholder;
+                // set this only if a whole document still sits a little high (use a
+                // positive value to nudge every field DOWN) or low (negative).
+                'anchor_y_offset_pixels' => (int) env('DOCUSIGN_ANCHOR_Y_OFFSET_PIXELS', 0),
             ],
             'webhook' => [
                 'hmac_secret' => env('DOCUSIGN_CONNECT_HMAC_SECRET'),
